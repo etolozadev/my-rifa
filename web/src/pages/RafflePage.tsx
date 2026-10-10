@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BankCard } from '../components/BankCard';
 import { NumberGrid } from '../components/NumberGrid';
 import { ReserveSheet } from '../components/ReserveSheet';
@@ -15,7 +15,10 @@ const PURPOSE = { beneficio: 'A beneficio', viaje: 'Viaje de estudio', otro: 'Ri
 export function RafflePage() {
   const { slug = '' } = useParams();
   const navigate = useNavigate();
-  const { data: raffle, error, loading, reload } = useLoad(() => api.getRaffle(slug));
+  // Enlace de un vendedor: /r/<slug>?v=<codigo> (sus números asignados quedan disponibles y la venta va a su nombre)
+  const [params] = useSearchParams();
+  const sellerCode = params.get('v');
+  const { data: raffle, error, loading, reload } = useLoad(() => api.getRaffle(slug, sellerCode));
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [sheet, setSheet] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -101,6 +104,10 @@ export function RafflePage() {
         {raffle.estado === 'cerrada' && <div className="banner">La venta de esta rifa está cerrada. Ya no se aceptan reservas.</div>}
         {raffle.estado === 'sorteada' && <div className="banner ok">El sorteo ya se realizó. ¡Gracias por participar!</div>}
 
+        {raffle.vendedor && open && (
+          <div className="banner ok" role="status">Estás comprando con el enlace de {raffle.vendedor.nombre}.</div>
+        )}
+
         {saved.length > 0 && (
           <section className="card" aria-labelledby="saved-title">
             <h2 id="saved-title">Tus reservas en este dispositivo</h2>
@@ -164,6 +171,7 @@ export function RafflePage() {
       {sheet && (
         <ReserveSheet
           raffle={raffle}
+          sellerCode={raffle.vendedor ? sellerCode : null}
           numbers={sorted}
           onClose={() => setSheet(false)}
           onConflict={(taken) => {

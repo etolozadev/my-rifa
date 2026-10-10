@@ -10,9 +10,11 @@ interface Props {
   onDone: (r: { token: string; numeros: number[]; monto: number }) => void;
   /** Algunos números se ocuparon mientras el comprador elegía */
   onConflict: (noDisponibles: number[]) => void;
+  /** Código del vendedor cuyo enlace se está usando */
+  sellerCode?: string | null;
 }
 
-export function ReserveSheet({ raffle, numbers, onClose, onDone, onConflict }: Props) {
+export function ReserveSheet({ raffle, numbers, onClose, onDone, onConflict, sellerCode }: Props) {
   const [nombre, setNombre] = useState('');
   const [contacto, setContacto] = useState('');
   const [touched, setTouched] = useState(false);
@@ -43,6 +45,7 @@ export function ReserveSheet({ raffle, numbers, onClose, onDone, onConflict }: P
         ...(booklet ? { tipo: 'talonario' as const, talonario: booklet } : { tipo: 'numeros' as const, numeros: numbers }),
         compradorNombre: nombre.trim(),
         compradorContacto: contacto.trim(),
+        ...(sellerCode ? { vendedor: sellerCode } : {}),
       });
       onDone(res);
     } catch (err) {

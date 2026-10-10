@@ -17,6 +17,15 @@ export interface ReserveInput {
   /** Solo para canal fisica/manual: la orden nace pagada */
   pagada?: boolean;
   confirmadaPor?: number;
+  /** Vendedor al que se atribuye la venta */
+  sellerId?: number | null;
+  /**
+   * Solo toma números sin asignar o asignados a `sellerId`: los de otros vendedores están en sus talonarios
+   * físicos. La web lo respeta siempre; el equipo puede registrar cualquier número.
+   */
+  respetarAsignacion?: boolean;
+  /** Orden creada desde un enlace de pago previo */
+  shareLinkId?: number;
 }
 
 /**
@@ -42,59 +51,67 @@ export async function expireOrders(raffleId?: number): Promise<number> {
   });
 }
 
-/** UPDATE condicional: solo toma números que siguen 'disponible'. Devuelve los tomados. */
+/**
+ * UPDATE condicional: solo toma números que siguen 'disponible' (y, si se pide, que no estén
+ * en el talonario de otro vendedor). Devuelve los tomados.
+ */
 async function takeTickets(
   raffleId: number,
   numeros: number[],
   orderId: number,
   estado: 'reservado' | 'pagado',
   t: Transaction,
+  asignacion?: { sellerId: number | null },
 ): Promise<number[]> {
   const rows = (await sequelize.query(
     `UPDATE tickets SET estado = :estado, order_id = :orderId
      WHERE raffle_id = :raffleId AND numero IN (:numeros) AND estado = 'disponible'
+     ${asignacion ? 'AND (seller_id IS NULL OR seller_id = :sellerId)' : ''}
      RETURNING numero`,
-    { replacements: { estado, orderId, raffleId, numeros }, type: QueryTypes.SELECT, transaction: t },
+    {
+      replacements: { estado, orderId, raffleId, numeros, sellerId: asignacion?.sellerId ?? null },
+      type: QueryTypes.SELECT,
+      transaction: t,
+    },
   )) as { numero: number }[];
   return rows.map((r) => r.numero);
 }
 
-/** Números pedidos que tiene OTRA orden (los que esta misma orden alcanzó a tomar no cuentan). */
-async function unavailableOf(raffleId: number, numeros: number[], orderId: number, t: Transaction): Promise<number[]> {
-  const rows = (await sequelize.query(
-    `SELECT numero FROM tickets
-     WHERE raffle_id = :raffleId AND numero IN (:numeros) AND estado <> 'disponible' AND order_id IS DISTINCT FROM :orderId
-     ORDER BY numero`,
-    { replacements: { raffleId, numeros, orderId }, type: QueryTypes.SELECT, transaction: t },
-  )) as { numero: number }[];
-  return rows.map((r) => r.numero);
+/** Los números pedidos que la orden no alcanzó a tomar (ocupados o en el talonario de otro vendedor). */
+function missing(numeros: number[], taken: number[]): number[] {
+  const got = new Set(taken);
+  return numeros.filter((n) => !got.has(n)).sort((a, b) => a - b);
 }
 
-export async function reserve(raffle: any, input: ReserveInput) {
+/** Números que pide una orden: los del talonario k, o los sueltos validados y sin repetir. */
+export function orderNumbers(raffle: any, input: Pick<ReserveInput, 'tipo' | 'numeros' | 'talonario'>): number[] {
+  const total = raffle.cantidadTalonarios * raffle.numerosPorTalonario;
+  if (input.tipo === 'talonario') {
+    const k = input.talonario;
+    if (!k || k < 1 || k > raffle.cantidadTalonarios) throw badRequest('Talonario inexistente');
+    return Array.from({ length: raffle.numerosPorTalonario }, (_, i) => (k - 1) * raffle.numerosPorTalonario + i + 1);
+  }
+  const numeros = [...new Set(input.numeros ?? [])].sort((a, b) => a - b);
+  if (!numeros.length) throw badRequest('Elige al menos un número');
+  if (numeros.some((n) => !Number.isInteger(n) || n < 1 || n > total)) throw badRequest('Hay números fuera de rango');
+  return numeros;
+}
+
+/** Crea la orden y toma sus números. Con `outer` corre dentro de esa transacción (no abre otra). */
+export async function reserve(raffle: any, input: ReserveInput, outer?: Transaction) {
   const canal = input.canal ?? 'web';
   if (canal === 'web') {
     if (raffle.estado !== 'activa') throw conflict('La rifa no está recibiendo reservas');
     if (new Date(raffle.fechaSorteo).getTime() <= Date.now()) throw conflict('La venta cerró: ya llegó la fecha del sorteo');
   }
-  const total = raffle.cantidadTalonarios * raffle.numerosPorTalonario;
-
-  let numeros: number[];
-  if (input.tipo === 'talonario') {
-    const k = input.talonario;
-    if (!k || k < 1 || k > raffle.cantidadTalonarios) throw badRequest('Talonario inexistente');
-    numeros = Array.from({ length: raffle.numerosPorTalonario }, (_, i) => (k - 1) * raffle.numerosPorTalonario + i + 1);
-  } else {
-    numeros = [...new Set(input.numeros ?? [])].sort((a, b) => a - b);
-    if (!numeros.length) throw badRequest('Elige al menos un número');
-    if (numeros.some((n) => !Number.isInteger(n) || n < 1 || n > total)) throw badRequest('Hay números fuera de rango');
-    if (canal === 'web' && numeros.length > raffle.maxNumerosPorOrden) {
-      throw badRequest(`Máximo ${raffle.maxNumerosPorOrden} números por orden`);
-    }
+  const numeros = orderNumbers(raffle, input);
+  if (canal === 'web' && input.tipo === 'numeros' && numeros.length > raffle.maxNumerosPorOrden) {
+    throw badRequest(`Máximo ${raffle.maxNumerosPorOrden} números por orden`);
   }
 
   await expireOrders(raffle.id);
 
-  return sequelize.transaction(async (t) => {
+  const run = async (t: Transaction) => {
     const paid = canal !== 'web' && input.pagada === true;
     const order: any = await Order.create(
       {
@@ -111,19 +128,24 @@ export async function reserve(raffle: any, input: ReserveInput) {
         venceEn: new Date(Date.now() + raffle.ttlReservaDias * DAY_MS),
         pagadaEn: paid ? new Date() : null,
         confirmadaPor: paid ? input.confirmadaPor ?? null : null,
+        sellerId: input.sellerId ?? null,
+        shareLinkId: input.shareLinkId ?? null,
       },
       { transaction: t },
     );
 
     // Corazón anti doble venta: una sola sentencia condicional dentro de la transacción.
-    const taken = await takeTickets(raffle.id, numeros, order.id, paid ? 'pagado' : 'reservado', t);
+    const asignacion = canal === 'web' || input.respetarAsignacion ? { sellerId: input.sellerId ?? null } : undefined;
+    const taken = await takeTickets(raffle.id, numeros, order.id, paid ? 'pagado' : 'reservado', t, asignacion);
     if (taken.length !== numeros.length) {
-      const noDisponibles = await unavailableOf(raffle.id, numeros, order.id, t);
-      throw conflict('Algunos números ya no están disponibles', { noDisponibles });
+      throw conflict('Algunos números ya no están disponibles', { noDisponibles: missing(numeros, taken) });
     }
-    if (canal !== 'web') await audit(input.confirmadaPor ?? null, raffle.id, 'crear_manual', 'orden', order.id, { canal, numeros }, t);
+    if (canal !== 'web') {
+      await audit(input.confirmadaPor ?? null, raffle.id, 'crear_manual', 'orden', order.id, { canal, numeros, sellerId: input.sellerId ?? null }, t);
+    }
     return order;
-  });
+  };
+  return outer ? run(outer) : sequelize.transaction(run);
 }
 
 async function lockOrder(orderId: number, t: Transaction): Promise<any> {
@@ -147,8 +169,9 @@ export async function confirmOrder(orderId: number, userId: number) {
     } else {
       const taken = await takeTickets(order.raffleId, order.numeros, order.id, 'pagado', t);
       if (taken.length !== order.numeros.length) {
-        const noDisponibles = await unavailableOf(order.raffleId, order.numeros, order.id, t);
-        throw conflict('La reserva venció y algunos números ya fueron tomados por otra persona', { noDisponibles });
+        throw conflict('La reserva venció y algunos números ya fueron tomados por otra persona', {
+          noDisponibles: missing(order.numeros, taken),
+        });
       }
     }
     order.estado = 'pagada';
@@ -187,8 +210,7 @@ export async function extendOrder(orderId: number, userId: number, dias: number)
     } else if (order.estado === 'vencida') {
       const taken = await takeTickets(order.raffleId, order.numeros, order.id, 'reservado', t);
       if (taken.length !== order.numeros.length) {
-        const noDisponibles = await unavailableOf(order.raffleId, order.numeros, order.id, t);
-        throw conflict('Algunos números ya fueron tomados por otra persona', { noDisponibles });
+        throw conflict('Algunos números ya fueron tomados por otra persona', { noDisponibles: missing(order.numeros, taken) });
       }
       order.estado = 'pendiente';
       order.venceEn = new Date(Date.now() + dias * DAY_MS);

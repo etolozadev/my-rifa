@@ -3,12 +3,14 @@ import { Router } from 'express';
 import { QueryTypes } from 'sequelize';
 import { z } from 'zod';
 import { sequelize } from '../db';
-import { badRequest, conflict, notFound, wrap } from '../errors';
+import { badRequest, conflict, forbidden, notFound, wrap } from '../errors';
 import { AuthedRequest, assertRole, csrfGuard, raffleRole, requireAuth } from '../middleware/auth';
-import { Order, PaymentProof, Prize, Raffle, RaffleMember, User } from '../models';
+import { Order, PaymentProof, Prize, Raffle, RaffleMember, Seller, User } from '../models';
 import { proofPath } from '../services/files';
 import { cancelOrder, confirmOrder, expireOrders, extendOrder, raffleOf, reserve } from '../services/orders';
 import { audit, createRaffle, raffleSummary, regenerateStructure } from '../services/raffles';
+import { addMember, removeMember, sellerStats, sellerOfUser } from '../services/sellers';
+import { teamRouter } from './team';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, csrfGuard);
@@ -16,6 +18,16 @@ adminRouter.use(requireAuth, csrfGuard);
 const uid = (req: any) => (req as AuthedRequest).userId;
 const team = raffleRole('organizador', 'editor');
 const organizer = raffleRole('organizador');
+/** Cualquiera del equipo, incluido el vendedor (que solo ve y opera sus propias ventas) */
+const member = raffleRole('organizador', 'editor', 'vendedor');
+/** Vendedor de la petición (solo si el rol es vendedor) */
+const sellerOf = (req: any): any | null => req.seller ?? null;
+
+/** Nombres de los vendedores de una rifa, para mostrar a quién se atribuye cada venta */
+async function sellerNames(raffleId: number): Promise<Map<number, string>> {
+  const rows: any[] = await Seller.findAll({ where: { raffleId }, include: [{ association: 'User', attributes: ['nombre'] }] });
+  return new Map(rows.map((s) => [s.id, s.User?.nombre ?? '']));
+}
 
 // ---------- Validación ----------
 const bank = {
@@ -72,11 +84,18 @@ adminRouter.post(
 
 adminRouter.get(
   '/rifas/:id',
-  team,
+  member,
   wrap(async (req, res) => {
     const raffle: any = await Raffle.findByPk(req.params.id, { include: [{ model: Prize, as: 'premios' }] });
     if (!raffle) throw notFound();
-    res.json({ ...raffle.toJSON(), rol: (req as any).role, resumen: await raffleSummary(raffle.id) });
+    const seller = sellerOf(req);
+    res.json({
+      ...raffle.toJSON(),
+      rol: (req as any).role,
+      resumen: await raffleSummary(raffle.id),
+      // El vendedor ve su enlace y su propia rendición
+      vendedor: seller ? (await sellerStats(raffle, seller.id))[0] : null,
+    });
   }),
 );
 
@@ -189,16 +208,15 @@ adminRouter.post(
   '/rifas/:id/miembros',
   organizer,
   wrap(async (req, res) => {
-    // Fase 1: solo editores y solo usuarios que ya tienen cuenta (crear con npm run user:create).
-    // El rol vendedor y las invitaciones por link llegan en la fase 2.
-    const { email } = z.object({ email: z.string().email() }).strict().parse(req.body);
+    // Usuarios que ya tienen cuenta; para quien no la tiene están las invitaciones por link
+    const { email, rol } = z
+      .object({ email: z.string().email(), rol: z.enum(['editor', 'vendedor']).default('editor') })
+      .strict()
+      .parse(req.body);
     const user: any = await User.findOne({ where: { email: email.toLowerCase() } });
-    if (!user) throw notFound('No existe un usuario con ese correo');
-    const already = await RaffleMember.findOne({ where: { raffleId: req.params.id, userId: user.id } });
-    if (already) throw conflict('Esa persona ya es parte de la rifa');
-    await RaffleMember.create({ raffleId: Number(req.params.id), userId: user.id, rol: 'editor' });
-    await audit(uid(req), Number(req.params.id), 'agregar_editor', 'miembro', user.id);
-    res.status(201).json({ userId: user.id, nombre: user.nombre, email: user.email, rol: 'editor' });
+    if (!user) throw notFound('No existe un usuario con ese correo: envíale una invitación por link');
+    await sequelize.transaction((t) => addMember(Number(req.params.id), user.id, rol, uid(req), t));
+    res.status(201).json({ userId: user.id, nombre: user.nombre, email: user.email, rol });
   }),
 );
 
@@ -209,8 +227,7 @@ adminRouter.delete(
     const member: any = await RaffleMember.findOne({ where: { raffleId: req.params.id, userId: req.params.userId } });
     if (!member) throw notFound();
     if (member.rol === 'organizador') throw conflict('No se puede quitar al organizador');
-    await member.destroy();
-    await audit(uid(req), Number(req.params.id), 'quitar_miembro', 'miembro', Number(req.params.userId));
+    await sequelize.transaction((t) => removeMember(Number(req.params.id), member, uid(req), t));
     res.status(204).end();
   }),
 );
@@ -218,70 +235,151 @@ adminRouter.delete(
 // ---------- Números y órdenes (vista del equipo, con datos de compradores) ----------
 adminRouter.get(
   '/rifas/:id/numeros',
-  team,
+  member,
   wrap(async (req, res) => {
     await expireOrders(Number(req.params.id));
     const estado = z.enum(['disponible', 'reservado', 'pagado']).optional().parse(req.query.estado);
+    const seller = sellerOf(req);
     const rows = (await sequelize.query(
       `SELECT t.numero, b.numero AS talonario, t.estado, o.id AS "ordenId",
               o.comprador_nombre AS "compradorNombre", o.comprador_contacto AS "compradorContacto",
-              o.creada_en AS fecha, o.canal
+              o.creada_en AS fecha, o.canal, o.seller_id AS "ordenVendedorId",
+              t.seller_id AS "vendedorId", su.nombre AS "vendedorNombre"
        FROM tickets t
        JOIN booklets b ON b.id = t.booklet_id
        LEFT JOIN orders o ON o.id = t.order_id
+       LEFT JOIN sellers s ON s.id = t.seller_id
+       LEFT JOIN users su ON su.id = s.user_id
        WHERE t.raffle_id = :id ${estado ? 'AND t.estado = :estado' : ''}
        ORDER BY t.numero`,
       { replacements: { id: req.params.id, estado }, type: QueryTypes.SELECT },
     )) as any[];
-    res.json(rows);
+    // Un vendedor ve el estado de todos los números, pero los datos del comprador solo de sus ventas
+    if (seller) {
+      for (const r of rows) {
+        if (r.ordenId && r.ordenVendedorId !== seller.id) {
+          Object.assign(r, { ordenId: null, compradorNombre: null, compradorContacto: null, fecha: null, canal: null });
+        }
+      }
+    }
+    res.json(rows.map(({ ordenVendedorId, ...r }) => r));
   }),
 );
 
 adminRouter.get(
   '/rifas/:id/ordenes',
-  team,
+  member,
   wrap(async (req, res) => {
     await expireOrders(Number(req.params.id));
     const estado = z.enum(['pendiente', 'pagada', 'vencida', 'cancelada']).optional().parse(req.query.estado);
+    const seller = sellerOf(req);
     const orders = await Order.findAll({
-      where: { raffleId: req.params.id, ...(estado ? { estado } : {}) },
+      where: { raffleId: req.params.id, ...(estado ? { estado } : {}), ...(seller ? { sellerId: seller.id } : {}) },
       include: [{ model: PaymentProof, as: 'comprobantes', attributes: ['id', 'nombreOriginal', 'subidoEn'] }],
       order: [['creadaEn', 'DESC']],
     });
+    const names = await sellerNames(Number(req.params.id));
     // El token del comprador no se expone al equipo
-    res.json(orders.map((o: any) => { const { token, ...rest } = o.toJSON(); return rest; }));
+    res.json(
+      orders.map((o: any) => {
+        const { token, ...rest } = o.toJSON();
+        return { ...rest, vendedorNombre: rest.sellerId ? names.get(rest.sellerId) ?? null : null };
+      }),
+    );
   }),
 );
 
-// Venta registrada por el equipo (base para la carga rápida de rifas físicas de la fase 2)
+const saleBody = z.object({
+  compradorNombre: z.string().trim().min(2).max(120),
+  compradorContacto: z.string().trim().min(6).max(120),
+  pagada: z.boolean().default(false),
+  /** Solo el equipo elige a quién atribuir la venta; un vendedor siempre vende a su nombre */
+  vendedorId: z.number().int().nullable().optional(),
+});
+
+/** Atribución y restricciones de una venta registrada desde el panel, según quién la registra. */
+async function saleContext(req: any, raffleId: number, vendedorId?: number | null) {
+  const seller = sellerOf(req);
+  if (seller) return { sellerId: seller.id as number, respetarAsignacion: true };
+  if (vendedorId) {
+    const s: any = await Seller.findOne({ where: { id: vendedorId, raffleId } });
+    if (!s) throw badRequest('Ese vendedor no es de esta rifa');
+    return { sellerId: s.id as number, respetarAsignacion: false };
+  }
+  return { sellerId: null, respetarAsignacion: false };
+}
+
+// Venta registrada por el equipo o por un vendedor (talonario físico, efectivo, pagos por fuera)
 adminRouter.post(
   '/rifas/:id/ordenes-manuales',
-  team,
+  member,
   wrap(async (req, res) => {
-    const body = z
-      .object({
+    const body = saleBody
+      .extend({
         tipo: z.enum(['numeros', 'talonario']),
         numeros: z.array(z.number().int()).max(500).optional(),
         talonario: z.number().int().optional(),
-        compradorNombre: z.string().trim().min(2).max(120),
-        compradorContacto: z.string().trim().min(6).max(120),
         canal: z.enum(['fisica', 'manual']).default('manual'),
-        pagada: z.boolean().default(false),
       })
       .strict()
       .parse(req.body);
     const raffle = await Raffle.findByPk(req.params.id);
     if (!raffle) throw notFound();
-    const order: any = await reserve(raffle, { ...body, confirmadaPor: uid(req) });
+    const { vendedorId, ...input } = body;
+    const ctx = await saleContext(req, Number(req.params.id), vendedorId);
+    const order: any = await reserve(raffle, { ...input, ...ctx, confirmadaPor: uid(req) });
     res.status(201).json({ id: order.id, estado: order.estado, numeros: order.numeros, monto: order.monto, venceEn: order.venceEn });
   }),
 );
 
+// Carga rápida: muchas ventas de una vez (pegadas o importadas desde CSV). Cada fila es independiente.
+adminRouter.post(
+  '/rifas/:id/ventas-lote',
+  member,
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        canal: z.enum(['fisica', 'manual']).default('fisica'),
+        ventas: z.array(saleBody.extend({ numeros: z.array(z.number().int()).min(1).max(500) }).strict()).min(1).max(300),
+      })
+      .strict()
+      .parse(req.body);
+    const raffle = await Raffle.findByPk(req.params.id);
+    if (!raffle) throw notFound();
+
+    const resultados: any[] = [];
+    for (const [i, v] of body.ventas.entries()) {
+      const { vendedorId, ...input } = v;
+      try {
+        const ctx = await saleContext(req, Number(req.params.id), vendedorId);
+        const order: any = await reserve(raffle, { ...input, tipo: 'numeros', canal: body.canal, ...ctx, confirmadaPor: uid(req) });
+        resultados.push({ fila: i + 1, ok: true, ordenId: order.id, numeros: order.numeros, estado: order.estado });
+      } catch (e: any) {
+        if (!e?.status) throw e;
+        resultados.push({ fila: i + 1, ok: false, error: e.message, noDisponibles: e.details?.noDisponibles });
+      }
+    }
+    await audit(uid(req), raffle.get('id') as number, 'carga_lote', 'rifa', raffle.get('id') as number, {
+      filas: resultados.length,
+      creadas: resultados.filter((r) => r.ok).length,
+    });
+    res.json({ creadas: resultados.filter((r) => r.ok).length, fallidas: resultados.filter((r) => !r.ok).length, resultados });
+  }),
+);
+
 // ---------- Acciones sobre una orden (rol validado contra la rifa de la orden) ----------
+/** Organizador o editor; un vendedor solo sobre sus propias ventas. */
+async function assertCanOperate(userId: number, order: any) {
+  const rol = await assertRole(userId, order.raffleId, ['organizador', 'editor', 'vendedor']);
+  if (rol !== 'vendedor') return;
+  const seller = await sellerOfUser(order.raffleId, userId);
+  if (!seller || order.sellerId !== seller.id) throw forbidden('Solo puedes operar tus propias ventas');
+}
+
 const orderAction = (fn: (orderId: number, userId: number, req: any) => Promise<any>) =>
   wrap(async (req, res) => {
     const order = await raffleOf(Number(req.params.id));
-    await assertRole(uid(req), order.raffleId, ['organizador', 'editor']);
+    await assertCanOperate(uid(req), order);
     const updated = await fn(order.id, uid(req), req);
     res.json({ id: updated.id, estado: updated.estado, venceEn: updated.venceEn, pagadaEn: updated.pagadaEn });
   });
@@ -302,7 +400,7 @@ adminRouter.get(
     const proof: any = await PaymentProof.findByPk(req.params.id);
     if (!proof) throw notFound();
     const order = await raffleOf(proof.orderId);
-    await assertRole(uid(req), order.raffleId, ['organizador', 'editor']);
+    await assertCanOperate(uid(req), order);
     res.setHeader('Content-Type', proof.mime);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', 'inline');
@@ -310,3 +408,5 @@ adminRouter.get(
   }),
 );
 
+// Vendedores, enlaces de pago previo e invitaciones (fase 2)
+adminRouter.use(teamRouter);

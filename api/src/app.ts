@@ -7,6 +7,7 @@ import { errorHandler, notFound } from './errors';
 import { adminRouter } from './routes/admin';
 import { authRouter } from './routes/auth';
 import { publicRouter } from './routes/public';
+import { sharedRouter } from './routes/shared';
 
 export function createApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api', sharedRouter);
   app.use('/api', publicRouter);
   app.use('/api', (_req, _res, next) => next(notFound('Ruta no encontrada')));
   app.use(errorHandler);

@@ -35,6 +35,25 @@ export interface PublicRaffle {
     talonariosDisponibles: number;
   };
   numeros: { n: number; e: TicketState }[];
+  /** Presente cuando se compra con el enlace de un vendedor (?v=) */
+  vendedor?: { nombre: string } | null;
+}
+
+export interface PrepaidLink {
+  estado: 'vigente' | 'usado' | 'vencido' | 'revocado';
+  cupo: number;
+  venceEn: string;
+  compradorNombre: string | null;
+  ordenToken: string | null;
+  rifa: PublicRaffle;
+}
+
+export interface InvitationInfo {
+  estado: 'vigente' | 'usada' | 'vencida' | 'revocada';
+  rol: 'editor' | 'vendedor';
+  rifa: { id: number; nombre: string };
+  invitadoPor: string | null;
+  conSesion: boolean;
 }
 
 export interface PublicOrder {
@@ -55,6 +74,8 @@ export interface ReserveBody {
   talonario?: number;
   compradorNombre: string;
   compradorContacto: string;
+  /** Código del enlace del vendedor */
+  vendedor?: string;
 }
 
 export class ApiError extends Error {
@@ -68,7 +89,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api${path}`, init);
@@ -85,7 +106,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getRaffle: (slug: string) => request<PublicRaffle>(`/rifas/${encodeURIComponent(slug)}`),
+  getRaffle: (slug: string, vendedor?: string | null) =>
+    request<PublicRaffle>(`/rifas/${encodeURIComponent(slug)}${vendedor ? `?v=${encodeURIComponent(vendedor)}` : ''}`),
   reserve: (slug: string, body: ReserveBody) =>
     request<{ token: string; numeros: number[]; monto: number; venceEn: string }>(`/rifas/${encodeURIComponent(slug)}/ordenes`, {
       method: 'POST',
@@ -102,4 +124,20 @@ export const api = {
     });
   },
   proofUrl: (token: string, id: number) => `/api/ordenes/${encodeURIComponent(token)}/comprobantes/${id}`,
+
+  getLink: (token: string) => request<PrepaidLink>(`/enlaces/${encodeURIComponent(token)}`),
+  useLink: (token: string, body: Omit<ReserveBody, 'vendedor'>) =>
+    request<{ token: string; numeros: number[]; monto: number }>(`/enlaces/${encodeURIComponent(token)}/usar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  getInvitation: (token: string) => request<InvitationInfo>(`/invitaciones/${encodeURIComponent(token)}`),
+  acceptInvitation: (token: string, account?: { nombre: string; email: string; password: string }) =>
+    request<{ raffleId: number; rol: string }>(`/invitaciones/${encodeURIComponent(token)}/aceptar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'mis-rifas' },
+      body: JSON.stringify(account ?? {}),
+    }),
 };

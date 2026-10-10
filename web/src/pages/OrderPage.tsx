@@ -72,7 +72,8 @@ export function OrderPage() {
       <header className="card hero">
         <div className="row"><span className={`chip ${st.cls}`}>{st.label}</span></div>
         <h1>Tu reserva en {order.rifa.nombre}</h1>
-        <p className="muted">Hola {order.compradorNombre}. Sorteo: {longDate(order.rifa.fechaSorteo)}.</p>
+        {/* La fecha termina en "a. m." / "p. m.": sin punto final para no duplicarlo */}
+        <p className="muted">Hola {order.compradorNombre}. Sorteo: {longDate(order.rifa.fechaSorteo)}</p>
       </header>
 
       {order.estado === 'pendiente' && (

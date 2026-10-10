@@ -33,6 +33,10 @@ export const RaffleMember = define('RaffleMember', 'raffle_members', {
   rol: text(), creadoEn: ts(false),
 });
 
+export const Seller = define('Seller', 'sellers', {
+  id, raffleId: int(), userId: int(), codigoEnlace: text(), activo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+});
+
 export const Booklet = define('Booklet', 'booklets', { id, raffleId: int(), numero: int() });
 
 export const Ticket = define('Ticket', 'tickets', {
@@ -45,7 +49,7 @@ export const Order = define('Order', 'orders', {
   compradorNombre: text(), compradorContacto: text(), sellerId: int(true),
   numeros: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: false },
   monto: int(), estado: text(), creadaEn: ts(false), venceEn: ts(false),
-  pagadaEn: ts(), confirmadaPor: int(true),
+  pagadaEn: ts(), confirmadaPor: int(true), shareLinkId: int(true),
 });
 
 export const PaymentProof = define('PaymentProof', 'payment_proofs', {
@@ -57,6 +61,17 @@ export const Prize = define('Prize', 'prizes', {
   id, raffleId: int(), orden: int(), nombre: text(), descripcion: text(), imagenUrl: text(true),
 });
 
+export const ShareLink = define('ShareLink', 'share_links', {
+  id, raffleId: int(), orderId: int(true), token: text(), cupo: int(), usados: int(), venceEn: ts(false),
+  revocadoEn: ts(), compradorNombre: text(true), compradorContacto: text(true), sellerId: int(true),
+  creadoPor: int(true), creadoEn: ts(false),
+});
+
+export const Invitation = define('Invitation', 'invitations', {
+  id, raffleId: int(), token: text(), rol: text(), creadoPor: int(true), creadoEn: ts(false), venceEn: ts(false),
+  usadaPor: int(true), usadaEn: ts(), revocadaEn: ts(),
+});
+
 export const AuditLog = define('AuditLog', 'audit_log', {
   id, raffleId: int(true), userId: int(true), accion: text(), entidad: text(),
   entidadId: int(true), detalle: { type: DataTypes.JSONB, allowNull: false }, creadoEn: ts(false),
@@ -66,6 +81,7 @@ Raffle.hasMany(Booklet, { foreignKey: 'raffleId' });
 Raffle.hasMany(Prize, { foreignKey: 'raffleId', as: 'premios' });
 Raffle.hasMany(RaffleMember, { foreignKey: 'raffleId', as: 'miembros' });
 RaffleMember.belongsTo(User, { foreignKey: 'userId' });
+Seller.belongsTo(User, { foreignKey: 'userId' });
 Order.hasMany(PaymentProof, { foreignKey: 'orderId', as: 'comprobantes' });
 Order.hasMany(Ticket, { foreignKey: 'orderId', as: 'tickets' });
 Ticket.belongsTo(Order, { foreignKey: 'orderId' });

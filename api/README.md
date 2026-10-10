@@ -1,10 +1,13 @@
-# mis-rifas · API (fase 1)
+# mis-rifas · API (fases 1 y 2)
 
 API en Node.js + Express + TypeScript + Sequelize + PostgreSQL para organizar rifas: talonarios y números,
 reserva pública con vencimiento a 7 días, comprobantes de pago y confirmación por el equipo.
 Sigue la especificación "Especificación: Plataforma de Rifas (mis-rifas)".
 
 ## Puesta en marcha
+
+Lo más simple es Docker desde la raíz del repositorio (`docker compose up --build`, ver el README principal).
+Sin Docker:
 
 ```bash
 cp .env.example .env            # y edita DATABASE_URL y JWT_SECRET (openssl rand -hex 32)
@@ -19,8 +22,8 @@ Las cuentas se crean por script porque es una plataforma personal (`ALLOW_REGIST
 ## Pruebas
 
 ```bash
-createdb rifas_test             # una vez; usa TEST_DATABASE_URL si tu base es otra
-npm test                        # 32 tests de integración contra PostgreSQL real
+createdb rifas_test             # una vez; usa TEST_DATABASE_URL si tu base es otra (en Docker ya existe)
+npm test                        # 48 tests de integración contra PostgreSQL real (fase 1 y fase 2)
 npm run typecheck
 ```
 
@@ -58,16 +61,45 @@ Equipo (`/api/admin`, con sesión): `GET|POST /rifas` · `GET|PATCH /rifas/:id` 
 `DELETE /rifas/:id/miembros/:userId` · `GET /rifas/:id/numeros` · `GET /rifas/:id/ordenes` ·
 `POST /rifas/:id/ordenes-manuales` · `POST /ordenes/:id/confirmar|cancelar|extender` · `GET /comprobantes/:id`
 
+Fase 2, públicos: `GET /api/rifas/:slug?v=<codigo>` y `vendedor` en `POST /api/rifas/:slug/ordenes` ·
+`GET /api/enlaces/:token` · `POST /api/enlaces/:token/usar` · `GET /api/invitaciones/:token` ·
+`POST /api/invitaciones/:token/aceptar` (con `X-Requested-With`; sin sesión lleva `nombre`, `email`, `password`).
+
+Fase 2, equipo (`/api/admin`): `GET /rifas/:id/vendedores` · `POST /rifas/:id/vendedores/:sellerId/asignar|liberar`
+(`numeros` y/o `talonarios`) · `POST /rifas/:id/ventas-lote` · `GET|POST /rifas/:id/enlaces` · `POST /enlaces/:id/revocar` ·
+`GET|POST /rifas/:id/invitaciones` · `POST /invitaciones/:id/revocar` · `POST /rifas/:id/miembros` acepta `rol: editor|vendedor`.
+
 Errores: `{ "error": { "code", "message", "details" } }`.
+
+## Fase 2: decisiones
+
+- **Vendedores** (`raffle_members.rol = vendedor` + fila en `sellers` con `codigo_enlace`). Su enlace es
+  `/r/<slug>?v=<codigo>`: lo que se reserva con él queda en `orders.seller_id`. Un código inválido o de un vendedor
+  quitado no bloquea la compra, solo queda sin atribución. El vendedor ve la grilla completa pero solo los compradores,
+  órdenes, comprobantes y enlaces de sus ventas, y solo opera (confirma, cancela, extiende) esas.
+- **Talonarios físicos**: el equipo asigna números libres a un vendedor (`tickets.seller_id`). Esos números no se ofrecen
+  en la web pública (se ven como reservados) salvo con el enlace de ese vendedor, para evitar vender el mismo número en
+  papel y en la web. La web y los vendedores respetan las asignaciones dentro del mismo `UPDATE` condicional que impide la
+  doble venta; el organizador y los editores pueden registrar cualquier número.
+- **Quitar a un vendedor** lo desactiva (`sellers.activo = false`): su enlace deja de funcionar y sus números asignados sin
+  vender vuelven a la venta general, pero sus ventas conservan la atribución. Volver a sumarlo reactiva el mismo enlace.
+- **Carga rápida** (`ventas-lote`, hasta 300 filas): cada fila es una venta independiente; el resultado indica por fila
+  si se creó o qué números estaban ocupados. El front acepta texto pegado o CSV con `números; nombre; contacto[; pagada]`.
+- **Enlaces de pago previo** (`share_links`): para quien ya pagó N números por fuera. Elige exactamente N y la orden nace
+  pagada (`canal = manual`, `orders.share_link_id`). Un solo uso: el enlace se bloquea con `FOR UPDATE` mientras se usa;
+  se pueden anular y vencen (7 días por defecto).
+- **Invitaciones** (`invitations`): de un solo uso, vencen en 7 días, solo las crea el organizador. Permiten crear cuenta
+  aunque `ALLOW_REGISTRATION=false` (la invitación es la autorización). Si el correo ya tiene cuenta, se pide iniciar sesión.
+- El esquema de la fase 2 se agrega al final de `db/schema.sql` con `ADD COLUMN IF NOT EXISTS` y `CREATE TABLE IF NOT
+  EXISTS`, así se aplica sin pasos manuales sobre una base de la fase 1.
 
 ## Qué falta (según las fases de la especificación)
 
-- **Fase 2**: rol vendedor con enlace propio (la tabla `sellers` ya existe), carga rápida por rangos e
-  importación CSV, enlaces para compradores que ya pagaron (`share_links`), invitaciones por link.
 - **Fase 3**: sorteo (`draws` ya existe, con los índices que impiden repetir premio o ganador) y avisos.
-- Captcha en la reserva pública (hoy hay límite de frecuencia por IP) y el front en React.
+- Captcha en la reserva pública (hoy hay límite de frecuencia por IP).
 
 ## Despliegue (VPS)
 
-Nginx como proxy inverso con HTTPS hacia `PORT`, `NODE_ENV=production`, proceso con pm2 o systemd,
-copia diaria de PostgreSQL (`pg_dump`) y de la carpeta de comprobantes.
+Con Docker: ver la sección "Producción con Docker" del README de la raíz (`docker-compose.prod.yml`).
+Sin Docker: `npm run build`, `node dist/scripts/db-init.js` y `npm start` con `NODE_ENV=production`, detrás de Nginx con
+HTTPS, proceso con pm2 o systemd, copia diaria de PostgreSQL (`pg_dump`) y de la carpeta de comprobantes.

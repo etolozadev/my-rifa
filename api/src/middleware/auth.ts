@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config, isProd } from '../config';
 import { forbidden, unauthorized } from '../errors';
-import { RaffleMember } from '../models';
+import { RaffleMember, Seller } from '../models';
 
 export type Role = 'organizador' | 'editor' | 'vendedor';
 export interface AuthedRequest extends Request {
@@ -36,6 +36,17 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
+/** Usuario de la sesión si hay una válida; null si no (para rutas públicas que se comportan distinto con sesión). */
+export function sessionUserId(req: Request): number | null {
+  const token = req.cookies?.[COOKIE];
+  if (!token) return null;
+  try {
+    return (jwt.verify(token, config.JWT_SECRET) as unknown as { sub: number }).sub;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Protección CSRF para rutas autenticadas: además de SameSite=Lax, toda petición
  * que cambia datos debe traer la cabecera X-Requested-With (un formulario de otro
@@ -65,7 +76,13 @@ export const raffleRole =
     try {
       const raffleId = Number(req.params.id);
       if (!Number.isInteger(raffleId)) throw forbidden();
-      (req as any).role = await assertRole((req as AuthedRequest).userId, raffleId, roles);
+      const role = await assertRole((req as AuthedRequest).userId, raffleId, roles);
+      (req as any).role = role;
+      // Un vendedor solo opera sobre sus propias ventas: las rutas lo leen de req.seller
+      if (role === 'vendedor') {
+        (req as any).seller = await Seller.findOne({ where: { raffleId, userId: (req as AuthedRequest).userId, activo: true } });
+        if (!(req as any).seller) throw forbidden();
+      }
       next();
     } catch (e) {
       next(e);
