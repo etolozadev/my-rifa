@@ -58,6 +58,9 @@ services:
       context: ./web
       target: prod
     restart: unless-stopped
+    # Puerto interno donde escucha Nginx (no se publica en el servidor; solo le indica a Coolify a dónde enrutar)
+    expose:
+      - "80"
     depends_on:
       api:
         condition: service_healthy
