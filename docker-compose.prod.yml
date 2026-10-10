@@ -1,22 +1,28 @@
-# mis-rifas · producción
-#   cp .env.example .env   (y completa los secretos)
-#   docker compose -f docker-compose.prod.yml up -d --build
-# Solo el contenedor web publica un puerto; ponle delante el proxy con HTTPS del VPS (ver README).
-
-name: mis-rifas
+# mis-rifas · producción en Coolify
+#   Build pack: Docker Compose · Base Directory: / · Docker Compose Location: /docker-compose.prod.yml
+#   Dominio: en el servicio "web" → https://rifas.estebantoloza.cl (Coolify emite el certificado)
+# Coolify genera y guarda las contraseñas SERVICE_*; WEB_ORIGIN, SMTP_URL y MAIL_FROM se completan en
+# Configuration > Environment Variables. Guía completa: deploy/README.md
+#
+# Para probarlo fuera de Coolify: docker compose -f docker-compose.prod.yml --env-file <archivo> up
+# con SERVICE_PASSWORD_POSTGRES, SERVICE_HEX_64_JWT y WEB_ORIGIN definidos en el archivo.
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-rifas}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
-      POSTGRES_DB: ${POSTGRES_DB:-rifas}
+      POSTGRES_USER: rifas
+      POSTGRES_DB: rifas
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
     volumes:
       - db-data:/var/lib/postgresql/data
+      # Respaldos diarios (tarea programada en Coolify, ver deploy/README.md)
+      - backups:/backups
+      # Solo lectura: para incluir los comprobantes en el mismo respaldo
+      - uploads:/uploads:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U rifas -d rifas"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -25,34 +31,33 @@ services:
     build:
       context: ./api
       target: prod
-    image: mis-rifas-api:latest
     restart: unless-stopped
     init: true # reenvía señales y recoge procesos (apagado limpio)
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER:-rifas}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-rifas}
-      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env (openssl rand -hex 32)}
+      DATABASE_URL: postgres://rifas:${SERVICE_PASSWORD_POSTGRES}@db:5432/rifas
+      JWT_SECRET: ${SERVICE_HEX_64_JWT}
       UPLOADS_DIR: /app/storage/comprobantes
-      WEB_ORIGIN: ${WEB_ORIGIN:?Define WEB_ORIGIN en .env (ej. https://rifas.estebantoloza.cl)}
+      # URL pública del front (CORS, cookies y enlaces de los correos): https://rifas.estebantoloza.cl
+      WEB_ORIGIN: ${WEB_ORIGIN:?}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
-      # Avisos por correo al equipo (opcional): sin SMTP_URL no se envían
-      SMTP_URL: ${SMTP_URL:-}
+      # Avisos por correo al equipo (opcional). Gmail: smtps://tu.correo%40gmail.com:CLAVEDEAPLICACION@smtp.gmail.com:465
+      SMTP_URL: ${SMTP_URL}
       MAIL_FROM: ${MAIL_FROM:-mis-rifas <no-responder@localhost>}
     volumes:
-      - uploads:/app/storage # comprobantes de pago: respáldalos junto con la base
+      - uploads:/app/storage # comprobantes de pago
     depends_on:
       db:
         condition: service_healthy
 
+  # Único servicio público: Nginx sirve el front y reenvía /api a la API por la red interna.
+  # En Coolify se le asigna el dominio; no publica puertos (el proxy de Coolify llega por la red de Docker).
   web:
     build:
       context: ./web
       target: prod
-    image: mis-rifas-web:latest
     restart: unless-stopped
-    ports:
-      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -60,3 +65,4 @@ services:
 volumes:
   db-data:
   uploads:
+  backups:

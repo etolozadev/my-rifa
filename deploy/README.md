@@ -1,92 +1,123 @@
-# Despliegue en el servidor
+# Despliegue en Coolify
 
-Guía para publicar mis-rifas en **https://rifas.estebantoloza.cl**, en un VPS que ya tiene Nginx sirviendo otros sitios.
-La app corre en Docker y solo escucha en `127.0.0.1`; el Nginx del servidor la publica con HTTPS. No hay que abrir puertos nuevos.
+Guía para publicar mis-rifas en **https://rifas.estebantoloza.cl** con Coolify. Coolify construye las imágenes desde
+GitHub, pone el dominio con HTTPS y guarda las contraseñas; el repositorio solo aporta `docker-compose.prod.yml`.
 
-Todo se probó de punta a punta en una copia local: instalación, importación de la rifa, inicio de sesión, descarga de
-comprobantes, respaldo y restauración del respaldo.
+Probado en una simulación local de Coolify (proyecto con nombre tipo UUID, sin puertos publicados, variables `SERVICE_*`):
+despliegue sano, importación de la rifa, reserva y subida de comprobante a través del Nginx del contenedor `web`, y
+respaldo con el comando de la tarea programada, restaurado en una base aparte.
 
-## Antes de empezar
+## 1. Antes de empezar
 
-1. **DNS**: en el panel de tu dominio, crea un registro `A` para `rifas` que apunte a la IP pública del servidor.
-   Puede tardar unos minutos en propagarse; el certificado HTTPS no se emite hasta que apunte bien.
-2. **Contraseña de aplicación de Gmail** (para los avisos al equipo): requiere la verificación en dos pasos activada.
-   Entra a https://myaccount.google.com/apppasswords, crea una llamada "mis-rifas" y guarda las 16 letras.
-   Si prefieres activarlo después, deja el Gmail en blanco cuando el instalador lo pregunte.
-3. **Copia la migración al servidor** desde tu PC, en la carpeta del proyecto (contiene datos de compradores:
-   no la subas a ningún otro lugar):
+- **DNS**: en el panel de tu dominio, un registro `A` para `rifas` con la IP del servidor de Coolify. Si usas Cloudflare,
+  déjalo en "DNS only" (nube gris): con el proxy de Cloudflare la app vería las IP de Cloudflare y el límite de reservas
+  por IP dejaría de distinguir compradores.
+- **Contraseña de aplicación de Gmail** (avisos al equipo): con la verificación en dos pasos activa, créala en
+  https://myaccount.google.com/apppasswords con el nombre "mis-rifas". Son 16 letras; se usan sin espacios.
 
-   ```bash
-   scp -r migracion-produccion usuario@IP-DEL-SERVIDOR:/tmp/
-   ```
+## 2. Crear la aplicación
 
-## Instalación (en el servidor)
+En Coolify: tu proyecto → **+ New** → **Public Repository** (o tu GitHub App, si la conectaste: así cada push a `main`
+despliega solo).
+
+| Campo | Valor |
+| --- | --- |
+| Repository URL | `https://github.com/etolozadev/my-rifa` |
+| Branch | `main` |
+| Build Pack | **Docker Compose** |
+| Base Directory | `/` |
+| Docker Compose Location | `/docker-compose.prod.yml` |
+
+Coolify carga el archivo y muestra tres servicios: `db`, `api` y `web`.
+
+**Dominio**: solo en el servicio **web**, campo *Domains*: `https://rifas.estebantoloza.cl`. `db` y `api` quedan sin
+dominio (son internos). Coolify pide el certificado al desplegar.
+
+## 3. Variables (Configuration → Environment Variables)
+
+| Variable | Valor |
+| --- | --- |
+| `WEB_ORIGIN` | `https://rifas.estebantoloza.cl` (obligatoria: Coolify no despliega sin ella) |
+| `SMTP_URL` | `smtps://estebantoloza1998%40gmail.com:TUCLAVEDEAPLICACION@smtp.gmail.com:465` (el `@` del correo va como `%40`) |
+| `MAIL_FROM` | `Rifas <estebantoloza1998@gmail.com>` |
+| `SERVICE_PASSWORD_POSTGRES`, `SERVICE_HEX_64_JWT` | Las genera Coolify. **No las cambies después del primer despliegue**: la contraseña de la base queda fijada al crear su volumen, y cambiar el secreto cierra todas las sesiones. |
+
+Sin `SMTP_URL` la app funciona igual; solo no envía correos.
+
+Luego **Deploy**. La primera construcción tarda unos minutos. Cuando los tres servicios estén sanos, abre
+https://rifas.estebantoloza.cl (verás el inicio) y sigue con la importación.
+
+## 4. Importar tu rifa (una sola vez, por SSH)
+
+Desde tu PC, en la carpeta del proyecto (la carpeta tiene datos de compradores: no la subas a otro lugar):
 
 ```bash
-sudo git clone https://github.com/etolozadev/my-rifa.git /opt/mis-rifas
-cd /opt/mis-rifas
-
-# 1. Docker (lo ofrece instalar si falta), secretos generados, contenedores arriba y respaldo diario programado
-sudo ./deploy/install.sh
-
-# 2. Tu rifa "Cirugía Marion", tu cuenta (organizadora) y sus comprobantes. Solo funciona sobre una base vacía.
-sudo ./deploy/import-data.sh /tmp/migracion-produccion/cirugia-marion.sql /tmp/migracion-produccion/comprobantes.tgz
-sudo rm -rf /tmp/migracion-produccion
-
-# 3. Sitio en Nginx (sin tocar los otros) y certificado HTTPS con certbot
-sudo ./deploy/nginx-setup.sh
+scp -r migracion-produccion deploy/import-data.sh usuario@IP-DEL-SERVIDOR:/tmp/
+ssh usuario@IP-DEL-SERVIDOR
 ```
 
-Luego entra a https://rifas.estebantoloza.cl/admin con `estebantoloza1998@gmail.com` y **la misma contraseña que usabas
-en desarrollo**. El enlace público de la rifa se mantiene: https://rifas.estebantoloza.cl/r/cirugia-marion-c94e
-
-Si no recuerdas la contraseña:
+En el servidor, con el identificador de la app (el UUID que aparece en la URL de Coolify al abrir la aplicación; si
+ejecutas el script sin argumentos, lista los candidatos):
 
 ```bash
-sudo docker compose -f docker-compose.prod.yml exec api node dist/scripts/set-password.js estebantoloza1998@gmail.com "nueva-clave-larga"
+sudo bash /tmp/import-data.sh <uuid> /tmp/migracion-produccion/cirugia-marion.sql /tmp/migracion-produccion/comprobantes.tgz
+sudo rm -rf /tmp/migracion-produccion /tmp/import-data.sh
 ```
+
+El script solo corre sobre una base vacía, importa todo en una transacción y comprueba los comprobantes. Después entra a
+https://rifas.estebantoloza.cl/admin con `estebantoloza1998@gmail.com` y **la misma contraseña que usabas en desarrollo**.
+El enlace público de la rifa se mantiene: https://rifas.estebantoloza.cl/r/cirugia-marion-c94e
+
+## 5. Respaldo diario (Configuration → Scheduled Tasks → Add)
+
+| Campo | Valor |
+| --- | --- |
+| Name | `respaldo` |
+| Container | `db` |
+| Frequency | `30 3 * * *` (todos los días a las 03:30) |
+| Command | ver abajo |
+
+```sh
+sh -c 'd=$(date +%F-%H%M); pg_dump -U rifas -d rifas -Fc > /backups/db-$d.dump && tar -czf /backups/comprobantes-$d.tgz -C /uploads comprobantes && find /backups -type f -mtime +14 -delete && ls -l /backups'
+```
+
+Guarda la base y los comprobantes en el volumen `backups` y conserva 14 días; Coolify registra la salida de cada
+ejecución. Puedes ejecutarla una vez a mano para comprobarla.
+
+Si el servidor se pierde, se pierden también estos respaldos: cópialos a tu PC de vez en cuando. En el servidor,
+`sudo docker volume ls | grep backups` muestra el volumen (Coolify le antepone el UUID) y sus archivos están en
+`/var/lib/docker/volumes/<ese-volumen>/_data`.
 
 ## Día a día
 
-| Tarea | Comando (en `/opt/mis-rifas`) |
+| Tarea | Cómo |
 | --- | --- |
-| Actualizar a la última versión de `main` (respalda antes) | `sudo ./deploy/update.sh` |
-| Respaldo manual | `sudo ./deploy/backup.sh` |
-| Ver lo que pasa en la API | `sudo docker compose -f docker-compose.prod.yml logs -f api` |
-| Estado de los contenedores | `sudo docker compose -f docker-compose.prod.yml ps` |
-| Cambiar una contraseña | `sudo docker compose -f docker-compose.prod.yml exec api node dist/scripts/set-password.js correo "clave"` |
-| Crear otra cuenta | `sudo docker compose -f docker-compose.prod.yml exec api node dist/scripts/create-user.js "Nombre" correo "clave"` (o invítala desde el panel) |
-| Activar o cambiar el correo | edita `SMTP_URL` y `MAIL_FROM` en `.env` y luego `sudo docker compose -f docker-compose.prod.yml up -d` |
+| Actualizar | `git push` a `main` y luego **Redeploy** en Coolify (o automático con la GitHub App). Los cambios de la base se aplican solos al arrancar. |
+| Ver errores | Coolify → la app → **Logs** del servicio `api` |
+| Cambiar una contraseña | Coolify → **Terminal** → contenedor `api` → `node dist/scripts/set-password.js correo@ejemplo.cl "nueva-clave-larga"` |
+| Crear otra cuenta | Terminal en `api` → `node dist/scripts/create-user.js "Nombre" correo "clave"` (o invítala desde el panel) |
+| Activar o cambiar el correo | Edita `SMTP_URL` / `MAIL_FROM` y **Redeploy** |
 
-## Respaldos
+### Restaurar un respaldo
 
-`install.sh` programa un respaldo diario a las 03:30 (`/etc/cron.d/mis-rifas`): la base (`db-FECHA.dump`) y los comprobantes
-(`comprobantes-FECHA.tgz`) quedan en `/var/backups/mis-rifas` durante 14 días. El log está en `/var/log/mis-rifas-backup.log`.
+Reemplaza los datos actuales: ejecuta antes la tarea de respaldo. En Coolify detén el servicio `api` y, en la
+**Terminal** del contenedor `db`:
 
-Si el servidor se pierde, se pierden también sus respaldos: de vez en cuando cópialos a tu PC.
-
-```bash
-scp -r usuario@IP-DEL-SERVIDOR:/var/backups/mis-rifas ./respaldos-mis-rifas
+```sh
+pg_restore -U rifas -d rifas --clean --if-exists --no-owner /backups/db-FECHA.dump
+tar -xzf /backups/comprobantes-FECHA.tgz -C /tmp && ls /tmp/comprobantes
 ```
 
-Restaurar un respaldo (reemplaza los datos actuales: haz antes un respaldo nuevo):
+Los comprobantes se copian desde el contenedor `api` (allí el volumen no es de solo lectura). Por SSH:
+`sudo docker exec -i -u node <contenedor-api> tar -xzf - -C /app/storage < comprobantes-FECHA.tgz`.
+Luego vuelve a iniciar `api`.
 
-```bash
-cd /opt/mis-rifas
-sudo docker compose -f docker-compose.prod.yml stop api
-sudo docker compose -f docker-compose.prod.yml exec -T db pg_restore -U rifas -d rifas --clean --if-exists --no-owner < /var/backups/mis-rifas/db-FECHA.dump
-sudo docker compose -f docker-compose.prod.yml start api
-sudo docker compose -f docker-compose.prod.yml exec -T api tar -xzf - -C /app/storage < /var/backups/mis-rifas/comprobantes-FECHA.tgz
-```
+## Cómo está armado
 
-## Qué hace cada script
-
-- `install.sh`: verifica Docker, crea `.env` (secretos aleatorios, dominio, Gmail, primer puerto libre desde 8080; permisos
-  solo para root), construye y levanta los contenedores, comprueba que la app responde y programa el respaldo. Repetirlo es
-  seguro: conserva el `.env` existente.
-- `import-data.sh`: carga el `.sql` en una sola transacción (o entra todo o nada), copia los comprobantes dentro del
-  contenedor y comprueba que cada comprobante registrado tenga su archivo. Se niega a correr si la base ya tiene datos.
-- `nginx-setup.sh`: crea `/etc/nginx/sites-available/rifas.estebantoloza.cl` (o `conf.d` en otras distribuciones) desde
-  `nginx/mis-rifas.conf`, valida con `nginx -t` antes de recargar y ejecuta `certbot --nginx`. No modifica un sitio que ya exista.
-- `update.sh`: respaldo, `git pull --ff-only`, reconstrucción, verificación de salud y limpieza de imágenes viejas.
-- `backup.sh`: `pg_dump` de la base y `tar` de los comprobantes, con rotación.
+- `web` (Nginx) es el único servicio con dominio: sirve el front y reenvía `/api` a `api:3000` por la red interna de la
+  app. Toma la IP real del comprador desde `X-Forwarded-For` solo si la conexión viene de una red privada (el proxy de
+  Coolify), así nadie puede falsearla desde fuera.
+- `api` arranca como root solo para ajustar los permisos del volumen de comprobantes y corre la app como `node`
+  (`api/docker-entrypoint.sh`). Aplica el esquema de la base en cada arranque (es idempotente).
+- `db` (PostgreSQL 16) no tiene dominio ni puertos; monta los comprobantes en solo lectura para respaldarlos.
+- Volúmenes: `db-data` (base), `uploads` (comprobantes) y `backups` (respaldos).

@@ -49,50 +49,14 @@ cd api && cp .env.example .env && npm install && npm run db:init && npm run user
 cd web && npm install && npm run dev
 ```
 
-## Producción con Docker
+## Producción (Coolify)
 
-**Para instalar en el servidor, sigue [`deploy/README.md`](deploy/README.md)**: scripts probados para instalar, importar
-datos, publicar en Nginx con HTTPS, actualizar y respaldar. Lo que sigue explica cómo está armado.
+Se despliega con **Coolify** usando `docker-compose.prod.yml` (build pack *Docker Compose*). La guía paso a paso,
+con la importación de datos y los respaldos, está en [`deploy/README.md`](deploy/README.md).
 
-`docker-compose.prod.yml` levanta tres contenedores:
+- `web`: Nginx con el front compilado; reenvía `/api` a la API. Es el único servicio con dominio (HTTPS lo pone Coolify).
+- `api`: API compilada que corre como usuario sin privilegios; aplica el esquema al arrancar. Comprobantes en el volumen `uploads`.
+- `db`: PostgreSQL 16, sin dominio ni puertos. Volúmenes `db-data` y `backups`.
 
-- `db`: PostgreSQL 16 sin puerto publicado, datos en el volumen `db-data`.
-- `api`: API compilada (usuario sin privilegios); aplica el esquema al arrancar. Comprobantes en el volumen `uploads`.
-- `web`: Nginx con el front compilado; reenvía `/api` a la API. Es el único que publica puerto (`127.0.0.1:8080`).
-
-En el VPS:
-
-```bash
-git clone … mis-rifas && cd mis-rifas
-cp .env.example .env               # completa POSTGRES_PASSWORD, JWT_SECRET (openssl rand -hex 32) y WEB_ORIGIN
-                                   # opcional: SMTP_URL y MAIL_FROM para los avisos por correo al equipo
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec api node dist/scripts/create-user.js "Tu Nombre" tu@correo.cl "clave-larga"
-```
-
-HTTPS es obligatorio (la cookie de sesión es `Secure`). Con el Nginx del VPS y certbot:
-
-```nginx
-server {
-  server_name rifas.estebantoloza.cl;
-  location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    client_max_body_size 6m;
-  }
-}
-```
-
-El Nginx del contenedor toma la IP real de `X-Forwarded-For` solo cuando la conexión viene de una red privada (el proxy del
-VPS), así el límite de reservas por IP sigue funcionando y nadie puede falsearla desde fuera.
-
-**Actualizar**: `git pull && docker compose -f docker-compose.prod.yml up -d --build`
-
-**Respaldos** (diarios, por ejemplo con cron):
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T db pg_dump -U rifas rifas | gzip > backup-$(date +%F).sql.gz
-docker run --rm -v mis-rifas_uploads:/data -v "$PWD":/backup alpine tar czf /backup/comprobantes-$(date +%F).tgz -C /data .
-```
+Coolify genera las contraseñas (`SERVICE_PASSWORD_POSTGRES`, `SERVICE_HEX_64_JWT`); en su panel se completan
+`WEB_ORIGIN` y, para los avisos por correo, `SMTP_URL` y `MAIL_FROM`. Actualizar es hacer push a `main` y Redeploy.

@@ -122,8 +122,11 @@ ganador) y la de la orden incluye `premios` ganados.
 
 - Captcha en la reserva pública (hoy hay límite de frecuencia por IP).
 
-## Despliegue (VPS)
+## Despliegue
 
-Con Docker: ver la sección "Producción con Docker" del README de la raíz (`docker-compose.prod.yml`).
-Sin Docker: `npm run build`, `node dist/scripts/db-init.js` y `npm start` con `NODE_ENV=production`, detrás de Nginx con
-HTTPS, proceso con pm2 o systemd, copia diaria de PostgreSQL (`pg_dump`) y de la carpeta de comprobantes.
+En Coolify con `docker-compose.prod.yml`: ver [`deploy/README.md`](../deploy/README.md). La imagen de producción arranca
+con `docker-entrypoint.sh` (ajusta permisos del volumen de comprobantes y corre como `node`) y aplica el esquema al iniciar.
+
+Scripts de cuentas (en producción, desde la Terminal del contenedor `api`):
+`node dist/scripts/create-user.js "Nombre" correo "clave"` y `node dist/scripts/set-password.js correo "nueva-clave"`
+(en desarrollo: `npm run user:create` / `npm run user:password`).
