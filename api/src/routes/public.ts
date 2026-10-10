@@ -79,7 +79,7 @@ publicRouter.get(
     // Premios que ganó esta orden (solo números que siguen siendo suyos y pagados)
     const won =
       order.estado === 'pagada'
-        ? (await listDraws(raffle.id, false)).filter((d) => !d.anuladoEn && order.numeros.includes(d.numero))
+        ? (await listDraws(raffle.id, false)).filter((d) => d.tipo === 'premio' && !d.anuladoEn && order.numeros.includes(d.numero))
         : [];
     res.json({
       estado: order.estado,

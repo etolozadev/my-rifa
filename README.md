@@ -12,7 +12,7 @@ Las tres fases de la especificación están implementadas:
 1. **Venta**: talonarios y números sin doble venta, reserva con vencimiento, comprobantes, confirmación de pagos y panel.
 2. **Equipo y canales**: vendedores con enlace propio y talonarios asignados, carga rápida e importación CSV, enlaces de
    pago previo para quien ya pagó, e invitaciones por link.
-3. **Sorteo y avisos**: sorteo al azar verificable (o resultado externo, como la Lotería), anulaciones públicas con
+3. **Sorteo y avisos**: sorteo al azar verificable (o resultado externo, como la Lotería), números al agua antes de cada premio, anulaciones públicas con
    motivo, avisos por correo al equipo y mensajes de WhatsApp ya redactados para los compradores.
 
 Pendiente fuera de las fases: captcha en la reserva pública (hoy hay límite de frecuencia por IP).

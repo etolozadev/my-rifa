@@ -27,6 +27,7 @@ drawsRouter.post(
     const body = z
       .object({
         premioId: z.number().int(),
+        tipo: z.enum(['premio', 'agua']).default('premio'),
         modo: z.enum(['aleatorio', 'manual']).default('aleatorio'),
         numero: z.number().int().optional(),
         detalle: z.string().trim().max(300).optional(),

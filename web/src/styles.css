@@ -246,6 +246,9 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .field .err, .err { font-size: 0.875rem; color: var(--danger); font-weight: 650; }
 .check { display: flex; gap: 10px; align-items: center; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--primary); }
+.choice { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.choice legend { font-weight: 650; font-size: 0.9375rem; padding: 0; margin-bottom: 8px; }
+.choice .row { gap: 8px 20px; }
 .upload { border: 2px dashed var(--line-strong); border-radius: var(--r-card); padding: 16px; display: grid; gap: 10px; }
 .upload input[type='file'] { width: 100%; max-width: 100%; }
 fieldset.card { margin: 0; }
@@ -316,6 +319,14 @@ fieldset.card legend { font-weight: 750; font-size: 1.1rem; padding: 0 4px; floa
 details summary { cursor: pointer; color: var(--primary-strong); font-weight: 650; }
 @media (prefers-color-scheme: dark) { details summary { color: var(--primary); } }
 .winner-banner { font-size: 1.05rem; }
+/* Números al agua: boletos tachados, en segundo plano frente al ganador */
+.water { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); }
+.water-title { margin: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 0.9375rem; color: var(--primary-strong); }
+@media (prefers-color-scheme: dark) { .water-title { color: var(--primary); } }
+.water-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.water-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.results .water-list > li { display: grid; gap: 6px; justify-items: start; }
+.water .chip { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); text-decoration: line-through; text-decoration-thickness: 2px; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -354,11 +365,23 @@ details summary { cursor: pointer; color: var(--primary-strong); font-weight: 65
     #c2410c;
   animation: stage-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both, stage-glow 1.6s ease-out 0.2s 2;
 }
+/* Número al agua: el boleto se tiñe de agua y se hunde un poco, con ondas en vez de brillo */
+.stage.is-water.is-reveal .stage-ticket {
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 0 50%, var(--notch) 0.16em, transparent 0.17em),
+    radial-gradient(circle at 100% 50%, var(--notch) 0.16em, transparent 0.17em),
+    linear-gradient(180deg, #2b8fab, #0b6178);
+  animation: stage-pop 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both, stage-sink 1.2s ease-in-out 0.5s both, stage-ripple 1.4s ease-out 0.5s 2;
+}
+.stage.is-water.is-reveal .stage-winner { color: #cfe3ea; font-weight: 650; }
 .stage-winner { font-size: clamp(1.3rem, 1rem + 1.5vw, 2rem); font-weight: 750; color: #ffffff; animation: stage-rise 0.5s ease-out 0.35s both; }
 .stage-actions { justify-content: center; }
 @keyframes stage-jitter { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes stage-pop { 0% { transform: scale(0.6); } 100% { transform: scale(1); } }
 @keyframes stage-glow { 0% { box-shadow: 0 0 0 0 rgba(251, 138, 91, 0.7), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } 100% { box-shadow: 0 0 0 40px rgba(251, 138, 91, 0), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } }
+@keyframes stage-sink { 0% { transform: translateY(0) rotate(0); } 60% { transform: translateY(14px) rotate(-2deg); } 100% { transform: translateY(10px) rotate(-1deg); } }
+@keyframes stage-ripple { 0% { box-shadow: 0 0 0 0 rgba(91, 192, 216, 0.6), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } 100% { box-shadow: 0 0 0 48px rgba(91, 192, 216, 0), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } }
 @keyframes stage-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
 @media (prefers-reduced-motion: reduce) { .stage-ticket, .stage-winner { animation: none !important; } }

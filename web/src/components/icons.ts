@@ -5,6 +5,7 @@ export { CaretLeftIcon } from '@phosphor-icons/react/dist/csr/CaretLeft';
 export { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight';
 export { SpeakerHighIcon } from '@phosphor-icons/react/dist/csr/SpeakerHigh';
 export { SpeakerSlashIcon } from '@phosphor-icons/react/dist/csr/SpeakerSlash';
+export { DropIcon } from '@phosphor-icons/react/dist/csr/Drop';
 export { TrophyIcon } from '@phosphor-icons/react/dist/csr/Trophy';
 export { CheckIcon } from '@phosphor-icons/react/dist/csr/Check';
 export { CopyIcon } from '@phosphor-icons/react/dist/csr/Copy';

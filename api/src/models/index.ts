@@ -81,6 +81,7 @@ export const Draw = define('Draw', 'draws', {
   id, raffleId: int(), prizeId: int(), ticketId: int(), sorteadoPor: int(true), sorteadoEn: ts(false),
   anuladoEn: ts(), modo: text(), semilla: text(true), participantes: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: true },
   posicion: int(true), detalle: text(true), motivoAnulacion: text(true),
+  tipo: { ...text(), defaultValue: 'premio' },
 });
 
 export const AuditLog = define('AuditLog', 'audit_log', {

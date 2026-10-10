@@ -298,6 +298,8 @@ export interface AdminDraw extends PublicDraw {
 
 export interface DrawInput {
   premioId: number;
+  /** agua: el número que sale queda eliminado de la rifa y el premio sigue pendiente */
+  tipo?: 'premio' | 'agua';
   modo: 'aleatorio' | 'manual';
   numero?: number;
   detalle?: string;

@@ -20,8 +20,12 @@ export async function drawsStarted(raffleId: number, t?: Transaction): Promise<b
   return (await Draw.count({ where: { raffleId, anuladoEn: null }, transaction: t })) > 0;
 }
 
+export type DrawType = 'premio' | 'agua';
+
 export interface DrawInput {
   premioId: number;
+  /** premio: sale el ganador. agua: sale un número que queda eliminado de toda la rifa (antes de sortear el premio) */
+  tipo?: DrawType;
   modo: 'aleatorio' | 'manual';
   /** Solo manual: número ganador del sorteo externo */
   numero?: number;
@@ -31,8 +35,14 @@ export interface DrawInput {
   confirmarPendientes?: boolean;
 }
 
-/** Sortea un premio entre los números pagados que aún no ganaron. Devuelve el sorteo con su ganador. */
+/**
+ * Sortea un premio entre los números pagados que aún no salieron (ni ganaron ni se fueron al agua).
+ * Con tipo 'agua' el número que sale queda eliminado de la rifa y el premio sigue pendiente.
+ * Devuelve el sorteo con el número que salió.
+ */
 export async function drawPrize(raffleId: number, input: DrawInput, actorId: number) {
+  const tipo: DrawType = input.tipo ?? 'premio';
+  const agua = tipo === 'agua';
   const drawId = await sequelize.transaction(async (t) => {
     // El bloqueo de la rifa serializa sorteos simultáneos (dos pestañas, doble clic)
     const raffle: any = await Raffle.findByPk(raffleId, { transaction: t, lock: t.LOCK.UPDATE });
@@ -43,7 +53,7 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
 
     const prize: any = await Prize.findOne({ where: { id: input.premioId, raffleId }, transaction: t });
     if (!prize) throw notFound('Premio no encontrado');
-    if (await Draw.findOne({ where: { prizeId: prize.id, anuladoEn: null }, transaction: t })) {
+    if (await Draw.findOne({ where: { prizeId: prize.id, tipo: 'premio', anuladoEn: null }, transaction: t })) {
       throw conflict('Ese premio ya tiene ganador: anula el sorteo si hay que repetirlo');
     }
 
@@ -65,7 +75,8 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
       );
     }
 
-    // Participantes: números pagados que no ganaron otro premio, en orden. Se guarda la lista para verificar.
+    // Participantes: números pagados que aún no salieron (ni ganaron ni se fueron al agua), en orden.
+    // Se guarda la lista para verificar.
     const rows = (await sequelize.query(
       `SELECT t.id, t.numero FROM tickets t
        WHERE t.raffle_id = :raffleId AND t.estado = 'pagado'
@@ -74,6 +85,7 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
       { replacements: { raffleId }, type: QueryTypes.SELECT, transaction: t },
     )) as { id: number; numero: number }[];
     if (!rows.length) throw conflict('No hay números pagados que puedan ganar');
+    if (agua && rows.length < 2) throw conflict('Queda un solo número en la tómbola: si se va al agua, nadie gana el premio');
 
     let posicion: number;
     let semilla: string | null = null;
@@ -82,19 +94,25 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
       semilla = crypto.randomBytes(32).toString('hex');
       posicion = pickPosition(semilla, rows.length);
     } else {
-      if (!input.numero) throw badRequest('Indica el número ganador');
+      if (!input.numero) throw badRequest(agua ? 'Indica el número que se fue al agua' : 'Indica el número ganador');
       detalle = input.detalle?.trim() ?? '';
       if (detalle.length < 3) throw badRequest('Indica de dónde salió el número (ej. "Lotería del 12/11, 3 últimas cifras")');
       posicion = rows.findIndex((r) => r.numero === input.numero);
       if (posicion < 0) {
         const total = raffle.cantidadTalonarios * raffle.numerosPorTalonario;
         if (input.numero < 1 || input.numero > total) throw badRequest(`Los números van del 1 al ${total}`);
-        const won = await sequelize.query(
-          `SELECT 1 FROM draws d JOIN tickets t ON t.id = d.ticket_id
+        const [prev] = (await sequelize.query(
+          `SELECT d.tipo FROM draws d JOIN tickets t ON t.id = d.ticket_id
            WHERE t.raffle_id = :raffleId AND t.numero = :numero AND d.anulado_en IS NULL`,
           { replacements: { raffleId, numero: input.numero }, type: QueryTypes.SELECT, transaction: t },
+        )) as { tipo: DrawType }[];
+        throw conflict(
+          prev
+            ? prev.tipo === 'agua'
+              ? `El número ${input.numero} ya se fue al agua`
+              : `El número ${input.numero} ya ganó otro premio`
+            : `El número ${input.numero} no está pagado: no participa`,
         );
-        throw conflict(won.length ? `El número ${input.numero} ya ganó otro premio` : `El número ${input.numero} no está pagado: no participa`);
       }
     }
 
@@ -103,6 +121,7 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
       {
         raffleId,
         prizeId: prize.id,
+        tipo,
         ticketId: winner.id,
         sorteadoPor: actorId,
         sorteadoEn: new Date(),
@@ -118,16 +137,19 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
     // Con todos los premios sorteados la rifa queda "sorteada"
     const [{ faltan }] = (await sequelize.query(
       `SELECT count(*)::int AS faltan FROM prizes p
-       WHERE p.raffle_id = :raffleId AND NOT EXISTS (SELECT 1 FROM draws d WHERE d.prize_id = p.id AND d.anulado_en IS NULL)`,
+       WHERE p.raffle_id = :raffleId
+         AND NOT EXISTS (SELECT 1 FROM draws d WHERE d.prize_id = p.id AND d.tipo = 'premio' AND d.anulado_en IS NULL)`,
       { replacements: { raffleId }, type: QueryTypes.SELECT, transaction: t },
     )) as { faltan: number }[];
     if (faltan === 0) await raffle.update({ estado: 'sorteada', actualizadoEn: new Date() }, { transaction: t });
 
-    await audit(actorId, raffleId, 'sortear', 'sorteo', draw.id, { premio: prize.nombre, numero: winner.numero, modo: input.modo }, t);
+    await audit(actorId, raffleId, agua ? 'al_agua' : 'sortear', 'sorteo', draw.id, { premio: prize.nombre, numero: winner.numero, modo: input.modo }, t);
     return draw.id as number;
   });
 
   const result = (await listDraws(raffleId, true)).find((d) => d.id === drawId)!;
+  // Los números al agua no se avisan por correo: el aviso al equipo es por el ganador
+  if (agua) return result;
   const raffle: any = await Raffle.findByPk(raffleId);
   void notifyTeam(raffleId, `Sorteo de ${raffle.nombre}: ${result.premio.nombre}`, [
     `El número ${result.numero} ganó "${result.premio.nombre}" (${result.premio.orden}° premio).`,
@@ -144,7 +166,10 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
   return result;
 }
 
-/** Anula un sorteo (ganador inubicable, error al registrar). Queda publicado con su motivo y el premio se puede volver a sortear. */
+/**
+ * Anula un sorteo (ganador inubicable, error al registrar). Queda publicado con su motivo y el premio se puede volver
+ * a sortear. Anular un número al agua lo devuelve a la tómbola.
+ */
 export async function annulDraw(drawId: number, actorId: number, motivo: string) {
   return sequelize.transaction(async (t) => {
     const draw: any = await Draw.findByPk(drawId, { transaction: t, lock: t.LOCK.UPDATE });
@@ -152,7 +177,7 @@ export async function annulDraw(drawId: number, actorId: number, motivo: string)
     if (draw.anuladoEn) throw conflict('Ese sorteo ya está anulado');
     await draw.update({ anuladoEn: new Date(), motivoAnulacion: motivo }, { transaction: t });
     const raffle: any = await Raffle.findByPk(draw.raffleId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (raffle.estado === 'sorteada') await raffle.update({ estado: 'cerrada', actualizadoEn: new Date() }, { transaction: t });
+    if (draw.tipo === 'premio' && raffle.estado === 'sorteada') await raffle.update({ estado: 'cerrada', actualizadoEn: new Date() }, { transaction: t });
     await audit(actorId, draw.raffleId, 'anular_sorteo', 'sorteo', draw.id, { motivo }, t);
     return draw;
   });
@@ -160,6 +185,7 @@ export async function annulDraw(drawId: number, actorId: number, motivo: string)
 
 export interface DrawView {
   id: number;
+  tipo: DrawType;
   premio: { id: number; orden: number; nombre: string };
   numero: number;
   modo: 'aleatorio' | 'manual';
@@ -182,7 +208,7 @@ export interface DrawView {
 /** Sorteos de una rifa (vigentes primero, por premio). Los datos del ganador solo para el equipo. */
 export async function listDraws(raffleId: number, team: boolean): Promise<DrawView[]> {
   const rows = (await sequelize.query(
-    `SELECT d.id, d.modo, d.semilla, cardinality(d.participantes) AS participantes, d.posicion, d.detalle,
+    `SELECT d.id, d.tipo, d.modo, d.semilla, cardinality(d.participantes) AS participantes, d.posicion, d.detalle,
             d.sorteado_en AS "sorteadoEn", d.anulado_en AS "anuladoEn", d.motivo_anulacion AS "motivoAnulacion",
             p.id AS "premioId", p.orden AS "premioOrden", p.nombre AS "premioNombre", t.numero,
             o.id AS "ordenId", o.comprador_nombre AS "compradorNombre", o.comprador_contacto AS "compradorContacto",
@@ -201,6 +227,7 @@ export async function listDraws(raffleId: number, team: boolean): Promise<DrawVi
   )) as any[];
   return rows.map((r) => ({
     id: r.id,
+    tipo: r.tipo,
     premio: { id: r.premioId, orden: r.premioOrden, nombre: r.premioNombre },
     numero: r.numero,
     modo: r.modo,

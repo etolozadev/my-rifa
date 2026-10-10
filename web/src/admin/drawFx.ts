@@ -29,8 +29,11 @@ export interface DrawSound {
   start(): void;
   /** progress 0→1: el redoble crece en volumen y velocidad a medida que la tómbola frena */
   tick(progress: number): void;
-  /** Golpe final (bombo y caja), platillo y una fanfarria corta; corta el redoble */
-  reveal(): void;
+  /**
+   * Corta el redoble con el final: para un ganador, golpe con platillo y fanfarria corta; para un número
+   * al agua, un bombo suave y un chapuzón
+   */
+  reveal(kind?: 'premio' | 'agua'): void;
   /** Silencia o reactiva al instante (sin cortar el sorteo) */
   setMuted(muted: boolean): void;
   /** Detiene todo y libera el audio */
@@ -51,6 +54,8 @@ export interface DrumKit {
   kick(when: number, velocity: number): void;
   /** Platillo: ruido agudo con caída larga */
   crash(when: number, velocity: number): void;
+  /** Chapuzón: dos "glup" (tono que sube rápido, como una gota) y el salpicón (ruido filtrado corto) */
+  splash(when: number, velocity: number): void;
   tone(freq: number, when: number, dur: number, volume: number, type?: OscillatorType): void;
 }
 
@@ -122,6 +127,31 @@ export function createDrumKit(ctx: BaseAudioContext, out: AudioNode): DrumKit {
       hp.connect(g);
       g.connect(out);
     },
+    splash(when, velocity) {
+      const v = clamp01(velocity);
+      const bloop = (at: number, from: number, to: number, peak: number, decay: number) => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(from, at);
+        o.frequency.exponentialRampToValueAtTime(to, at + 0.08);
+        const g = envelope(at, peak, decay);
+        o.connect(g);
+        g.connect(out);
+        o.start(at);
+        o.stop(at + decay + 0.05);
+      };
+      bloop(when, 260, 950, v * 0.6, 0.16);
+      bloop(when + 0.1, 380, 1300, v * 0.35, 0.12);
+      const src = noiseFrom(when, 0.5);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 900;
+      bp.Q.value = 0.8;
+      const g = envelope(when, v * 0.5, 0.4);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(out);
+    },
     tone(freq, when, dur, volume, type = 'triangle') {
       const o = ctx.createOscillator();
       o.type = type;
@@ -179,6 +209,12 @@ export function scheduleFinale(kit: DrumKit, when: number) {
   kit.snare(when, 0.8);
   kit.crash(when, 0.42);
   scheduleFanfare(kit, when);
+}
+
+/** Final de un número al agua: el redoble se corta con un bombo suave y el número cae al agua */
+export function scheduleSplash(kit: Pick<DrumKit, 'kick' | 'splash'>, when: number) {
+  kit.kick(when, 0.4);
+  kit.splash(when + 0.05, 0.9);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -362,19 +398,20 @@ export function createDrawSound(muted: boolean): DrawSound {
       tension = clamp01(progress);
       roll?.setTension(tension, ctx.currentTime);
     },
-    reveal() {
+    reveal(kind = 'premio') {
       if (closed || revealed) return;
       revealed = true;
+      let when = ctx.currentTime + 0.02;
+      const synth = Boolean(pump);
       if (pump) {
         clearInterval(pump);
         pump = undefined;
         // El redoble ya programado suena hasta el golpe final, sin silencio entre medio
-        scheduleFinale(kit, Math.max(next, ctx.currentTime + 0.02));
-        return;
+        when = Math.max(next, when);
       }
-      const when = ctx.currentTime + 0.02;
       roll?.end(when);
-      if (samples) playSampledFinale(ctx, master, kit, samples, when);
+      if (kind === 'agua') scheduleSplash(kit, when);
+      else if (samples && !synth) playSampledFinale(ctx, master, kit, samples, when);
       else scheduleFinale(kit, when);
     },
     setMuted(m) {

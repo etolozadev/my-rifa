@@ -12,6 +12,7 @@ import {
   sampledRollGain,
   sampledRollRate,
   scheduleFinale,
+  scheduleSplash,
   scheduleRoll,
   shortName,
   suspenseDelays,
@@ -73,11 +74,18 @@ describe('utilidades del sorteo en vivo', () => {
       snare: (t: number) => calls.push(`snare@${t}`),
       kick: (t: number) => calls.push(`kick@${t}`),
       crash: (t: number) => calls.push(`crash@${t}`),
+      splash: (t: number) => calls.push(`splash@${t}`),
       tone: () => calls.push('tone'),
     };
     scheduleFinale(kit, 2);
     expect(calls.slice(0, 3)).toEqual(['kick@2', 'snare@2', 'crash@2']);
     expect(calls.filter((c) => c === 'tone').length).toBeGreaterThan(0);
+  });
+
+  it('un número al agua termina con un bombo suave y un chapuzón, sin platillo ni fanfarria', () => {
+    const calls: string[] = [];
+    scheduleSplash({ kick: (t) => calls.push(`kick@${t}`), splash: (t) => calls.push(`splash@${t.toFixed(2)}`) }, 2);
+    expect(calls).toEqual(['kick@2', 'splash@2.05']);
   });
 
   it('sin Web Audio el sonido queda en silencio y no falla', () => {
@@ -196,6 +204,14 @@ describe('escenario del sorteo', () => {
     expect(onSkip).toHaveBeenCalledTimes(2);
   });
 
+  it('un número al agua se anuncia sin celebrar, con su dueño', () => {
+    render(<DrawStage {...base} stage={{ phase: 'reveal', tipo: 'agua', numero: 42, ganador: 'Rosa D.' }} onSkip={() => {}} onClose={() => {}} />);
+    const dialog = screen.getByRole('dialog', { name: /Al agua/ });
+    expect(within(dialog).getByText('Número al agua', { exact: false }).parentElement).toHaveTextContent('Número al agua 042');
+    expect(within(dialog).getByText('Era de Rosa D.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Continuar' })).toHaveFocus();
+  });
+
   it('al revelar anuncia el número y el ganador, enfoca "Continuar" y se cierra con Escape', () => {
     const onClose = vi.fn();
     render(<DrawStage {...base} stage={{ phase: 'reveal', numero: 42, ganador: 'Juan S.' }} onSkip={() => {}} onClose={onClose} />);
@@ -218,7 +234,7 @@ describe('sorteo en vivo de punta a punta', () => {
     resumen: { disponibles: 0, reservados: 0, pagados: 10, total: 10, talonariosDisponibles: 0, recaudado: 10000, porCobrar: 0, metaMonto: 0 }, vendedor: null,
   });
   const winner: AdminDraw = {
-    id: 1, premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 4, modo: 'aleatorio', semilla: 'x', participantes: 10, posicion: 3,
+    id: 1, tipo: 'premio', premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 4, modo: 'aleatorio', semilla: 'x', participantes: 10, posicion: 3,
     detalle: null, sorteadoEn: future, anuladoEn: null, motivoAnulacion: null, ordenId: 2, compradorNombre: 'Juan Soto',
     compradorContacto: '912345678', vendedorNombre: null,
   };

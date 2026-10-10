@@ -133,8 +133,7 @@ CREATE TABLE IF NOT EXISTS draws (
   sorteado_en      TIMESTAMPTZ NOT NULL DEFAULT now(),
   anulado_en       TIMESTAMPTZ
 );
--- Un premio solo tiene un sorteo vigente, y un número no gana dos veces
-CREATE UNIQUE INDEX IF NOT EXISTS draws_prize_vigente_uq ON draws (prize_id) WHERE anulado_en IS NULL;
+-- Un número sale una sola vez (gana o se va al agua). Un ganador por premio: índice más abajo, junto a la columna tipo
 CREATE UNIQUE INDEX IF NOT EXISTS draws_ticket_vigente_uq ON draws (ticket_id) WHERE anulado_en IS NULL;
 
 -- Enlaces para compradores que ya pagaron (fase 2)
@@ -209,6 +208,13 @@ ALTER TABLE draws ADD COLUMN IF NOT EXISTS posicion INTEGER;
 ALTER TABLE draws ADD COLUMN IF NOT EXISTS detalle TEXT;
 ALTER TABLE draws ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT;
 CREATE INDEX IF NOT EXISTS draws_raffle_idx ON draws (raffle_id);
+
+-- Números al agua: antes de sortear un premio se pueden sacar números que quedan eliminados de toda la rifa.
+-- Se guardan como sorteos de tipo 'agua' del premio que venía (mismo azar verificable, o resultado externo).
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'premio' CHECK (tipo IN ('premio', 'agua'));
+-- Un premio tiene un solo ganador vigente, pero puede tener varios números al agua
+DROP INDEX IF EXISTS draws_prize_vigente_uq;
+CREATE UNIQUE INDEX IF NOT EXISTS draws_premio_ganador_uq ON draws (prize_id) WHERE anulado_en IS NULL AND tipo = 'premio';
 
 -- ============================================================================
 -- Personas de contacto (por rifa): a quién llamar por una venta cuando el comprador no dejó teléfono

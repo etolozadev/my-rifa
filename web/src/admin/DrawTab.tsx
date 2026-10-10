@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, type AdminDraw, type AdminRaffle, type DrawInput, type Prize } from '../lib/admin';
-import { plural, shortDate } from '../lib/format';
+import { plural, shortDate, ticketNumber } from '../lib/format';
 import { drawRecipient, winnerMessage } from '../lib/messages';
-import { SpeakerHighIcon, SpeakerSlashIcon } from '../components/icons';
+import { DropIcon, SpeakerHighIcon, SpeakerSlashIcon } from '../components/icons';
 import { CopyLink } from './CopyLink';
 import { createDrawSound, launchConfetti, preloadDrawSounds, shortName, suspenseDelays, type DrawSound } from './drawFx';
 import { DrawStage, type StageState } from './DrawStage';
@@ -22,6 +22,9 @@ const readSoundPref = () => {
     return true;
   }
 };
+
+type DrawType = NonNullable<DrawInput['tipo']>;
+
 /** Sin matchMedia (o con movimiento reducido) no hay animación */
 const reducedMotion = () => !window.matchMedia || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -88,7 +91,7 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
         {raffle.estado === 'cerrada' && (
           <>
             <p className="small">
-              Participan <b>{plural(participants, 'número pagado', 'números pagados')}</b>. Un número que ya ganó no vuelve a participar.
+              Participan <b>{plural(participants, 'número pagado', 'números pagados')}</b>. Un número que ya ganó o que se fue al agua no vuelve a participar.
               {raffle.resumen.reservados > 0 &&
                 ` Hay ${plural(raffle.resumen.reservados, 'número reservado', 'números reservados')} sin pagar: ${raffle.resumen.reservados === 1 ? 'no participa' : 'no participan'}.`}
             </p>
@@ -119,7 +122,8 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
             <PrizeDraw
               raffle={raffle}
               prize={p}
-              draw={valid.find((d) => d.premio.id === p.id) ?? null}
+              draw={valid.find((d) => d.premio.id === p.id && d.tipo === 'premio') ?? null}
+              water={valid.filter((d) => d.premio.id === p.id && d.tipo === 'agua')}
               pool={pool}
               canDraw={isOrganizer && raffle.estado === 'cerrada'}
               soundOn={soundOn}
@@ -137,7 +141,7 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
           <ul className="stack small" style={{ margin: 0, paddingLeft: 18 }}>
             {annulled.map((d) => (
               <li key={d.id}>
-                {d.premio.nombre}: N° {d.numero} ({shortDate(d.sorteadoEn)}), anulado el {shortDate(d.anuladoEn!)}. Motivo: {d.motivoAnulacion}
+                {d.premio.nombre}: N° {d.numero}{d.tipo === 'agua' && ' al agua'} ({shortDate(d.sorteadoEn)}), anulado el {shortDate(d.anuladoEn!)}. Motivo: {d.motivoAnulacion}
               </li>
             ))}
           </ul>
@@ -151,6 +155,8 @@ interface PrizeDrawProps {
   raffle: AdminRaffle;
   prize: Prize;
   draw: AdminDraw | null;
+  /** Números que se fueron al agua antes de este premio */
+  water: AdminDraw[];
   /** Números que participan (para la animación) */
   pool: number[];
   canDraw: boolean;
@@ -159,14 +165,16 @@ interface PrizeDrawProps {
   onChanged: () => Promise<void>;
 }
 
-function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound, onChanged }: PrizeDrawProps) {
+function PrizeDraw({ raffle, prize, draw, water, pool, canDraw, soundOn, onToggleSound, onChanged }: PrizeDrawProps) {
   const total = raffle.cantidadTalonarios * raffle.numerosPorTalonario;
   const [manual, setManual] = useState(false);
+  const [manualTipo, setManualTipo] = useState<DrawType>('premio');
   const [numero, setNumero] = useState('');
   const [detalle, setDetalle] = useState('');
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<StageState | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
+  // Aviso de reservas sin pagar, con el tipo de sorteo que lo provocó (para repetirlo confirmando)
+  const [pending, setPending] = useState<{ message: string; tipo: DrawType } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Efectos en curso: se cortan al cerrar el escenario, al saltar o si el componente desaparece
   const soundRef = useRef<DrawSound | null>(null);
@@ -189,10 +197,11 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
     return from[Math.floor(Math.random() * from.length)];
   };
 
-  async function run(confirmarPendientes = false) {
+  async function run(tipo: DrawType, confirmarPendientes = false) {
     const body: DrawInput = manual
-      ? { premioId: prize.id, modo: 'manual', numero: Number(numero), detalle: detalle.trim(), confirmarPendientes }
-      : { premioId: prize.id, modo: 'aleatorio', confirmarPendientes };
+      ? { premioId: prize.id, tipo, modo: 'manual', numero: Number(numero), detalle: detalle.trim(), confirmarPendientes }
+      : { premioId: prize.id, tipo, modo: 'aleatorio', confirmarPendientes };
+    const agua = tipo === 'agua';
     setBusy(true);
     setError(null);
     const motion = !reducedMotion();
@@ -212,11 +221,11 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
       if (shown) return;
       shown = true;
       current = pick(undefined);
-      setStage({ phase: 'rolling', numero: current });
+      setStage({ phase: 'rolling', numero: current, tipo });
       sound?.start();
       rollTimer = setInterval(() => {
         current = pick(current);
-        setStage({ phase: 'rolling', numero: current });
+        setStage({ phase: 'rolling', numero: current, tipo });
         sound?.tick(0);
       }, 70);
     };
@@ -235,16 +244,19 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
         for (let i = 0; i < delays.length && !skipRef.current; i++) {
           const last = i === delays.length - 1;
           current = last ? d.numero : pick(current, d.numero);
-          setStage({ phase: 'rolling', numero: current });
+          setStage({ phase: 'rolling', numero: current, tipo });
           sound?.tick(i / (delays.length - 1));
           await sleep(delays[i]);
         }
       }
       if (motion) {
-        setStage({ phase: 'reveal', numero: d.numero, ganador: shortName(d.compradorNombre) });
-        sound?.reveal();
-        confettiRef.current?.();
-        confettiRef.current = launchConfetti();
+        setStage({ phase: 'reveal', numero: d.numero, tipo, ganador: shortName(d.compradorNombre) });
+        sound?.reveal(tipo);
+        // Se celebra al ganador; el número al agua solo se hunde
+        if (!agua) {
+          confettiRef.current?.();
+          confettiRef.current = launchConfetti();
+        }
       }
       setPending(null);
       setManual(false);
@@ -253,7 +265,7 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
       clearTimeout(showTimer);
       setStage(null);
       sound?.stop();
-      if (err instanceof ApiError && err.code === 'pending_orders') setPending(err.message);
+      if (err instanceof ApiError && err.code === 'pending_orders') setPending({ message: err.message, tipo });
       else setError(err instanceof ApiError ? describeError(err) : 'No se pudo sortear.');
     } finally {
       clearInterval(rollTimer);
@@ -274,7 +286,7 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
     const n = Number(numero);
     if (!Number.isInteger(n) || n < 1 || n > total) return setError(`El número va del 1 al ${total}`);
     if (detalle.trim().length < 3) return setError('Indica de dónde salió el número');
-    run();
+    run(manualTipo);
   }
 
   return (
@@ -300,6 +312,8 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
         />
       )}
 
+      {water.length > 0 && <WaterList draws={water} total={total} canAnnul={raffle.rol === 'organizador'} onChanged={onChanged} />}
+
       {draw ? (
         <Winner raffle={raffle} draw={draw} canAnnul={raffle.rol === 'organizador'} onChanged={onChanged} />
       ) : (
@@ -308,14 +322,31 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
           <>
             {!manual ? (
               <div className="row">
-                <button className="btn primary" disabled={busy} onClick={() => run()}>Sortear al azar</button>
+                <button className="btn primary" disabled={busy} onClick={() => run('premio')}>Sortear al azar</button>
+                <button className="btn" disabled={busy} onClick={() => run('agua')}>
+                  <DropIcon size={18} aria-hidden="true" />
+                  Tirar un número al agua
+                </button>
                 <button className="btn" disabled={busy} onClick={() => setManual(true)}>Registrar resultado externo</button>
               </div>
             ) : (
               <form className="subform" onSubmit={submitManual} noValidate aria-label={`Resultado externo de ${prize.nombre}`}>
+                <fieldset className="choice">
+                  <legend>Este número</legend>
+                  <div className="row">
+                    <label className="check">
+                      <input type="radio" name={`t-${prize.id}`} checked={manualTipo === 'premio'} onChange={() => setManualTipo('premio')} />
+                      Ganó el premio
+                    </label>
+                    <label className="check">
+                      <input type="radio" name={`t-${prize.id}`} checked={manualTipo === 'agua'} onChange={() => setManualTipo('agua')} />
+                      Se fue al agua
+                    </label>
+                  </div>
+                </fieldset>
                 <div className="grid2">
                   <div className="field">
-                    <label htmlFor={`n-${prize.id}`}>Número ganador</label>
+                    <label htmlFor={`n-${prize.id}`}>{manualTipo === 'agua' ? 'Número al agua' : 'Número ganador'}</label>
                     <input id={`n-${prize.id}`} type="number" min={1} max={total} inputMode="numeric" value={numero} onChange={(e) => setNumero(e.target.value)} />
                   </div>
                   <div className="field">
@@ -325,7 +356,9 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
                 </div>
                 <div className="row" style={{ justifyContent: 'flex-end' }}>
                   <button type="button" className="btn small" disabled={busy} onClick={() => setManual(false)}>Cancelar</button>
-                  <button type="submit" className="btn small primary" disabled={busy}>Registrar ganador</button>
+                  <button type="submit" className="btn small primary" disabled={busy}>
+                    {manualTipo === 'agua' ? 'Registrar número al agua' : 'Registrar ganador'}
+                  </button>
                 </div>
               </form>
             )}
@@ -335,9 +368,9 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
 
       {pending && (
         <div className="banner" role="alert">
-          {pending} ¿Sortear igual?
+          {pending.message} ¿Sortear igual?
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn small primary" disabled={busy} onClick={() => run(true)}>Sortear igual</button>
+            <button className="btn small primary" disabled={busy} onClick={() => run(pending.tipo, true)}>Sortear igual</button>
             <button className="btn small" disabled={busy} onClick={() => setPending(null)}>Revisar primero</button>
           </div>
         </div>
@@ -347,12 +380,57 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound,
   );
 }
 
-function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle; draw: AdminDraw; canAnnul: boolean; onChanged: () => Promise<void> }) {
-  const [annulling, setAnnulling] = useState(false);
+/** Cómo salió un número: al azar (entre cuántos) o de un sorteo externo */
+const drawOrigin = (d: AdminDraw) => (d.modo === 'aleatorio' ? `Al azar entre ${d.participantes} números` : `Sorteo externo: ${d.detalle}`);
+
+/** Números que se fueron al agua antes de un premio. Anular uno lo devuelve a la tómbola. */
+function WaterList({ draws, total, canAnnul, onChanged }: { draws: AdminDraw[]; total: number; canAnnul: boolean; onChanged: () => Promise<void> }) {
+  const [annulling, setAnnulling] = useState<number | null>(null);
+  return (
+    <div className="water">
+      <h4 className="water-title">
+        <DropIcon size={18} weight="duotone" aria-hidden="true" />
+        {draws.length === 1 ? 'Se fue al agua' : `Se fueron al agua (${draws.length})`}
+      </h4>
+      <ul className="water-list">
+        {draws.map((d) => (
+          <li key={d.id}>
+            <div className="water-row">
+              <span className="chip neutral">
+                <span className="sr-only">Número al agua </span>
+                {ticketNumber(d.numero, total)}
+              </span>
+              <span className="small">
+                {d.compradorNombre ?? 'Sin comprador'}
+                <span className="muted"> · {drawOrigin(d)} · {shortDate(d.sorteadoEn)}</span>
+              </span>
+              {canAnnul && annulling !== d.id && (
+                <button className="btn small" onClick={() => setAnnulling(d.id)} aria-label={`Anular el ${d.numero} al agua`}>
+                  Anular
+                </button>
+              )}
+            </div>
+            {annulling === d.id && (
+              <AnnulForm
+                draw={d}
+                label="Devolver a la tómbola"
+                placeholder="Ej: se anotó un número equivocado"
+                onCancel={() => setAnnulling(null)}
+                onDone={onChanged}
+              />
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Anula un sorteo con un motivo, que queda publicado junto al resultado */
+function AnnulForm({ draw: d, label, placeholder, onCancel, onDone }: { draw: AdminDraw; label: string; placeholder: string; onCancel: () => void; onDone: () => Promise<void> }) {
   const [motivo, setMotivo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const to = drawRecipient(d);
 
   async function annul(e: FormEvent) {
     e.preventDefault();
@@ -361,12 +439,31 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
     setError(null);
     try {
       await adminApi.annulDraw(d.id, motivo.trim());
-      await onChanged();
+      await onDone();
     } catch (err) {
       setError(err instanceof ApiError ? describeError(err) : 'No se pudo anular.');
       setBusy(false);
     }
   }
+
+  return (
+    <form className="subform" onSubmit={annul} noValidate aria-label={d.tipo === 'agua' ? `Anular el ${d.numero} al agua` : 'Anular sorteo'}>
+      <div className="field">
+        <label htmlFor={`m-${d.id}`}>Motivo (se publica junto al resultado)</label>
+        <input id={`m-${d.id}`} maxLength={300} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder={placeholder} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button type="button" className="btn small" disabled={busy} onClick={onCancel}>Cancelar</button>
+        <button type="submit" className="btn small danger" disabled={busy}>{label}</button>
+      </div>
+      {error && <div className="banner error" role="alert">{error}</div>}
+    </form>
+  );
+}
+
+function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle; draw: AdminDraw; canAnnul: boolean; onChanged: () => Promise<void> }) {
+  const [annulling, setAnnulling] = useState(false);
+  const to = drawRecipient(d);
 
   return (
     <div className="stack">
@@ -389,7 +486,7 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
             </p>
           )}
           <p className="muted small">
-            {d.modo === 'aleatorio' ? `Al azar entre ${d.participantes} números` : `Sorteo externo: ${d.detalle}`} · {shortDate(d.sorteadoEn)}
+            {drawOrigin(d)} · {shortDate(d.sorteadoEn)}
             {d.ordenId && ` · orden #${d.ordenId}`}
             {d.vendedorNombre && ` · vendedor: ${d.vendedorNombre}`}
           </p>
@@ -406,18 +503,14 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
         {canAnnul && !annulling && <button className="btn small danger" onClick={() => setAnnulling(true)}>Anular sorteo</button>}
       </div>
       {annulling && (
-        <form className="subform" onSubmit={annul} noValidate aria-label="Anular sorteo">
-          <div className="field">
-            <label htmlFor={`m-${d.id}`}>Motivo (se publica junto al resultado)</label>
-            <input id={`m-${d.id}`} maxLength={300} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej: el ganador no respondió en 7 días" />
-          </div>
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn small" disabled={busy} onClick={() => setAnnulling(false)}>Cancelar</button>
-            <button type="submit" className="btn small danger" disabled={busy}>Anular y permitir repetir</button>
-          </div>
-        </form>
+        <AnnulForm
+          draw={d}
+          label="Anular y permitir repetir"
+          placeholder="Ej: el ganador no respondió en 7 días"
+          onCancel={() => setAnnulling(false)}
+          onDone={onChanged}
+        />
       )}
-      {error && <div className="banner error" role="alert">{error}</div>}
     </div>
   );
 }

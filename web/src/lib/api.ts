@@ -43,6 +43,8 @@ export interface PublicRaffle {
 
 export interface PublicDraw {
   id: number;
+  /** premio: el ganador. agua: un número que salió antes del ganador y quedó eliminado de la rifa */
+  tipo: 'premio' | 'agua';
   premio: { id: number; orden: number; nombre: string };
   numero: number;
   modo: 'aleatorio' | 'manual';

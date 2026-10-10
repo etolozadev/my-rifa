@@ -147,7 +147,7 @@ describe('avisos a la persona de contacto', () => {
 
   it('el ganador sin teléfono se avisa a su persona de contacto', async () => {
     const draw: AdminDraw = {
-      id: 1, premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 4, modo: 'manual', semilla: null, participantes: 7, posicion: 3,
+      id: 1, tipo: 'premio', premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 4, modo: 'manual', semilla: null, participantes: 7, posicion: 3,
       detalle: 'Tómbola', sorteadoEn: past, anuladoEn: null, motivoAnulacion: null, ordenId: 5, compradorNombre: 'Doña Marta',
       compradorContacto: null, contactoNombre: 'Rosa Pérez', contactoTelefono: '+56 9 1111 2222', vendedorNombre: null,
     };

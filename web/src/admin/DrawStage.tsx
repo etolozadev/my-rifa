@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { SpeakerHighIcon, SpeakerSlashIcon, TrophyIcon } from '../components/icons';
+import { DropIcon, SpeakerHighIcon, SpeakerSlashIcon, TrophyIcon } from '../components/icons';
 import { ticketNumber } from '../lib/format';
 
 export interface StageState {
   phase: 'rolling' | 'reveal';
   numero: number;
-  /** Nombre abreviado del ganador ("Juan S."), solo al revelar */
+  /** agua: el número que sale queda eliminado (sin celebración) */
+  tipo?: 'premio' | 'agua';
+  /** Nombre abreviado del comprador ("Juan S."), solo al revelar */
   ganador?: string | null;
 }
 
@@ -23,6 +25,7 @@ interface Props {
 export function DrawStage({ prize, total, stage, soundOn, onToggleSound, onSkip, onClose }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const reveal = stage.phase === 'reveal';
+  const agua = stage.tipo === 'agua';
 
   useEffect(() => {
     if (reveal) closeRef.current?.focus();
@@ -39,26 +42,34 @@ export function DrawStage({ prize, total, stage, soundOn, onToggleSound, onSkip,
   }, [reveal, onClose, onSkip]);
 
   return (
-    <div className={`stage ${reveal ? 'is-reveal' : 'is-rolling'}`} role="dialog" aria-modal="true" aria-labelledby="stage-title">
+    <div className={`stage ${reveal ? 'is-reveal' : 'is-rolling'}${agua ? ' is-water' : ''}`} role="dialog" aria-modal="true" aria-labelledby="stage-title">
       <div className="stage-panel">
         <p className="stage-prize">
           {prize.orden}° premio · {prize.nombre}
         </p>
         <h2 id="stage-title" className="stage-title">
           {reveal ? (
-            <>
-              <TrophyIcon size={30} weight="duotone" aria-hidden="true" /> ¡Tenemos ganador!
-            </>
+            agua ? (
+              <>
+                <DropIcon size={30} weight="duotone" aria-hidden="true" /> ¡Al agua!
+              </>
+            ) : (
+              <>
+                <TrophyIcon size={30} weight="duotone" aria-hidden="true" /> ¡Tenemos ganador!
+              </>
+            )
+          ) : agua ? (
+            '¿Cuál se va al agua?'
           ) : (
             'Sorteando…'
           )}
         </h2>
         {/* Mientras gira no se anuncia cada número; al revelar, sí */}
         <div className="stage-ticket" aria-live={reveal ? 'assertive' : 'off'}>
-          {reveal && <span className="sr-only">Número ganador </span>}
+          {reveal && <span className="sr-only">{agua ? 'Número al agua ' : 'Número ganador '}</span>}
           <span aria-hidden={!reveal}>{ticketNumber(stage.numero, total)}</span>
         </div>
-        {reveal && stage.ganador && <p className="stage-winner">{stage.ganador}</p>}
+        {reveal && stage.ganador && <p className="stage-winner">{agua ? `Era de ${stage.ganador}` : stage.ganador}</p>}
         <div className="row stage-actions">
           <button type="button" className="btn small" onClick={onToggleSound} aria-pressed={soundOn}>
             {soundOn ? <SpeakerHighIcon size={18} aria-hidden="true" /> : <SpeakerSlashIcon size={18} aria-hidden="true" />}

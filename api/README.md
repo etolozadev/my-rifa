@@ -23,7 +23,7 @@ Las cuentas se crean por script porque es una plataforma personal (`ALLOW_REGIST
 
 ```bash
 createdb rifas_test             # una vez; usa TEST_DATABASE_URL si tu base es otra (en Docker ya existe)
-npm test                        # 71 tests de integración contra PostgreSQL real (fases 1, 2, 3 y contactos)
+npm test                        # 77 tests de integración contra PostgreSQL real (fases 1, 2, 3, contactos y números al agua)
 npm run typecheck
 ```
 
@@ -110,19 +110,24 @@ Endpoints (organizador y editores): `GET|POST /api/admin/rifas/:id/contactos` ·
 ## Fase 3: sorteo y avisos
 
 Endpoints: `GET /api/admin/rifas/:id/sorteos` (organizador y editores, con datos del ganador) ·
-`POST /api/admin/rifas/:id/sorteos` (organizador: `premioId`, `modo: aleatorio|manual`, `numero` y `detalle` si es manual,
+`POST /api/admin/rifas/:id/sorteos` (organizador: `premioId`, `tipo: premio|agua`, `modo: aleatorio|manual`, `numero` y `detalle` si es manual,
 `confirmarPendientes`) · `POST /api/admin/sorteos/:id/anular` (organizador, `motivo`) ·
 `GET /api/rifas/:slug/sorteos/:id/participantes` (público). La vista pública de la rifa incluye `sorteos` (sin datos del
 ganador) y la de la orden incluye `premios` ganados.
 
 - **Cuándo**: solo con la venta cerrada. Si hay reservas pendientes vigentes la API responde 409 `pending_orders` (con
   cuántas tienen comprobante) y se sortea solo si se confirma con `confirmarPendientes`: no participan.
-- **Participantes**: los números pagados que no ganaron otro premio, ordenados. Se guarda la lista en el sorteo.
+- **Participantes**: los números pagados que aún no salieron (ni ganaron ni se fueron al agua), ordenados. Se guarda la
+  lista en el sorteo.
+- **Números al agua** (`tipo: agua`): antes de sortear un premio se pueden sacar números, al azar o registrados de una
+  tómbola física; quedan eliminados de toda la rifa y el premio sigue pendiente. Se guardan como sorteos del premio que
+  venía, con la misma verificación, y se publican junto al ganador. No se tiran con el premio ya sorteado ni si dejaría
+  la tómbola vacía; anular uno lo devuelve a la tómbola (sin reabrir una rifa ya sorteada). No envían correo.
 - **Al azar y verificable**: semilla de 32 bytes aleatorios (`crypto.randomBytes`); posición ganadora =
   `SHA-256(semilla)` leído como entero, módulo la cantidad de participantes. Semilla, lista y posición son públicas y la
   página de la rifa lo recalcula en el navegador ("Verificar en mi navegador").
 - **Externo** (Lotería, tómbola en vivo): se registra el número y de dónde salió; debe ser un número pagado que no haya ganado.
-- **Un premio, un ganador; un número, un premio**: índices únicos parciales sobre sorteos vigentes, y el sorteo bloquea la
+- **Un premio, un ganador; un número sale una vez**: índices únicos parciales sobre sorteos vigentes, y el sorteo bloquea la
   rifa (`FOR UPDATE`) para que dos clics simultáneos no sorteen dos veces (hay un test con 5 sorteos a la vez).
 - **Anular** (ganador inubicable, error al anotar): solo el organizador y con motivo. El sorteo anulado se conserva y se
   publica con su motivo; el premio se puede volver a sortear y el número anulado vuelve a participar.

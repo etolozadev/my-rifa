@@ -23,7 +23,7 @@ const publicRaffle = (over: Partial<PublicRaffle> = {}): PublicRaffle => ({
 });
 
 const draw = (over: Partial<PublicDraw> = {}): PublicDraw => ({
-  id: 1, premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 0, modo: 'aleatorio', semilla: 'abc', participantes: 7, posicion: 0,
+  id: 1, tipo: 'premio', premio: { id: 11, orden: 1, nombre: 'Bicicleta' }, numero: 0, modo: 'aleatorio', semilla: 'abc', participantes: 7, posicion: 0,
   detalle: null, sorteadoEn: past, anuladoEn: null, motivoAnulacion: null, ...over,
 });
 
@@ -150,8 +150,8 @@ describe('panel: sorteo', () => {
     expect(notify.getAttribute('href')).toMatch(/^https:\/\/wa\.me\/56911112222\?text=/);
     expect(decodeURIComponent(notify.getAttribute('href')!.split('text=')[1])).toContain('Tu número 4 ganó el 1° premio de la rifa "Rifa Viaje": Bicicleta');
     expect(callsTo('POST', '/api/admin/rifas/7/sorteos').map((c) => c.body)).toEqual([
-      { premioId: 11, modo: 'aleatorio', confirmarPendientes: false },
-      { premioId: 11, modo: 'aleatorio', confirmarPendientes: true },
+      { premioId: 11, tipo: 'premio', modo: 'aleatorio', confirmarPendientes: false },
+      { premioId: 11, tipo: 'premio', modo: 'aleatorio', confirmarPendientes: true },
     ]);
   });
 
@@ -169,7 +169,7 @@ describe('panel: sorteo', () => {
     await user.type(within(card).getByLabelText('De dónde salió'), 'Lotería del 12/11');
     await user.click(within(card).getByRole('button', { name: 'Registrar ganador' }));
     await waitFor(() => expect(callsTo('POST', '/api/admin/rifas/7/sorteos')).toHaveLength(1));
-    expect(callsTo('POST', '/api/admin/rifas/7/sorteos')[0].body).toEqual({ premioId: 12, modo: 'manual', numero: 6, detalle: 'Lotería del 12/11', confirmarPendientes: false });
+    expect(callsTo('POST', '/api/admin/rifas/7/sorteos')[0].body).toEqual({ premioId: 12, tipo: 'premio', modo: 'manual', numero: 6, detalle: 'Lotería del 12/11', confirmarPendientes: false });
   });
 
   it('anula un sorteo con motivo', async () => {
@@ -239,5 +239,97 @@ describe('avisos a compradores', () => {
     await user.click(screen.getByRole('button', { name: /Pagadas/ }));
     const paid = within(screen.getByRole('article', { name: /Luis/ })).getByRole('link', { name: 'Avisar por WhatsApp' }).getAttribute('href')!;
     expect(decodeURIComponent(paid.split('text=')[1])).toMatch(/confirmamos tu pago de \$2\.000/);
+  });
+});
+
+describe('números al agua', () => {
+  const water = (over: Partial<AdminDraw> = {}) =>
+    adminDraw({ id: 5, tipo: 'agua', numero: 3, posicion: 2, compradorNombre: 'Rosa Díaz', ...over });
+
+  it('tira un número al azar al agua: queda listado en el premio, que sigue pendiente', async () => {
+    const user = userEvent.setup();
+    let draws: AdminDraw[] = [];
+    routes['GET /api/admin/rifas/7'] = () => ({ body: adminRaffle() });
+    routes['GET /api/admin/rifas/7/sorteos'] = () => ({ body: draws });
+    routes['POST /api/admin/rifas/7/sorteos'] = () => {
+      draws = [water()];
+      return { status: 201, body: draws[0] };
+    };
+    mount('/admin/rifas/7/sorteo');
+    const card = await screen.findByRole('article', { name: '1° premio: Bicicleta' });
+    await user.click(within(card).getByRole('button', { name: 'Tirar un número al agua' }));
+    await waitFor(() => expect(within(card).getByText('Se fue al agua')).toBeInTheDocument());
+    expect(callsTo('POST', '/api/admin/rifas/7/sorteos')[0].body).toEqual({ premioId: 11, tipo: 'agua', modo: 'aleatorio', confirmarPendientes: false });
+    expect(within(card).getByText(/^Número al agua/).parentElement).toHaveTextContent('Número al agua 03');
+    expect(within(card).getByText('Rosa Díaz')).toBeInTheDocument();
+    // El premio sigue esperando a su ganador, y el número al agua ya no participa
+    expect(within(card).getByText('Pendiente')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Sortear al azar' })).toBeInTheDocument();
+    expect(screen.getByText(/Participan/)).toHaveTextContent('Participan 6 números pagados');
+  });
+
+  it('registra un número al agua de una tómbola física', async () => {
+    const user = userEvent.setup();
+    routes['GET /api/admin/rifas/7'] = () => ({ body: adminRaffle() });
+    routes['GET /api/admin/rifas/7/sorteos'] = () => ({ body: [] });
+    routes['POST /api/admin/rifas/7/sorteos'] = (b) => ({ status: 201, body: water({ numero: b.numero, modo: 'manual', detalle: b.detalle }) });
+    mount('/admin/rifas/7/sorteo');
+    const card = await screen.findByRole('article', { name: '1° premio: Bicicleta' });
+    await user.click(within(card).getByRole('button', { name: 'Registrar resultado externo' }));
+    await user.click(within(card).getByRole('radio', { name: 'Se fue al agua' }));
+    await user.type(within(card).getByLabelText('Número al agua'), '3');
+    await user.type(within(card).getByLabelText('De dónde salió'), 'Tómbola en vivo');
+    await user.click(within(card).getByRole('button', { name: 'Registrar número al agua' }));
+    await waitFor(() => expect(callsTo('POST', '/api/admin/rifas/7/sorteos')).toHaveLength(1));
+    expect(callsTo('POST', '/api/admin/rifas/7/sorteos')[0].body).toEqual({
+      premioId: 11, tipo: 'agua', modo: 'manual', numero: 3, detalle: 'Tómbola en vivo', confirmarPendientes: false,
+    });
+  });
+
+  it('anular un número al agua lo devuelve a la tómbola, con motivo', async () => {
+    const user = userEvent.setup();
+    let draws = [water()];
+    routes['GET /api/admin/rifas/7'] = () => ({ body: adminRaffle() });
+    routes['GET /api/admin/rifas/7/sorteos'] = () => ({ body: draws });
+    routes['POST /api/admin/sorteos/5/anular'] = (b) => {
+      draws = [water({ anuladoEn: past, motivoAnulacion: b.motivo })];
+      return { body: draws[0] };
+    };
+    mount('/admin/rifas/7/sorteo');
+    const card = await screen.findByRole('article', { name: '1° premio: Bicicleta' });
+    await user.click(within(card).getByRole('button', { name: 'Anular el 3 al agua' }));
+    await user.type(within(card).getByLabelText(/Motivo/), 'Se anotó mal el número');
+    await user.click(within(card).getByRole('button', { name: 'Devolver a la tómbola' }));
+    expect(await screen.findByText(/N° 3 al agua .*Motivo: Se anotó mal el número/)).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: '1° premio: Bicicleta' })).queryByText('Se fue al agua')).not.toBeInTheDocument();
+  });
+
+  it('la página pública muestra los números al agua de cada premio, aunque falte el ganador', async () => {
+    routes['GET /api/rifas/viaje-ab12'] = () => ({
+      body: publicRaffle({
+        estado: 'cerrada',
+        premios: [{ orden: 1, nombre: 'Bicicleta', descripcion: '', imagenUrl: null }, { orden: 2, nombre: 'Canasta', descripcion: '', imagenUrl: null }],
+        sorteos: [
+          draw({ id: 1, tipo: 'agua', numero: 5 }),
+          draw({ id: 2, tipo: 'agua', numero: 1, modo: 'manual', semilla: null, detalle: 'Tómbola en vivo' }),
+          draw({ id: 3, numero: 4 }),
+          draw({ id: 4, tipo: 'agua', premio: { id: 12, orden: 2, nombre: 'Canasta' }, numero: 7 }),
+        ],
+      }),
+    });
+    mount('/r/viaje-ab12');
+    const results = await screen.findByRole('region', { name: 'Resultados del sorteo' });
+    const [bici, canasta] = within(results).getAllByRole('listitem').filter((li) => li.parentElement?.classList.contains('results'));
+    expect(within(bici).getByText('Se fueron al agua (2)')).toBeInTheDocument();
+    expect(within(bici).getAllByText('Número al agua', { exact: false }).map((el) => el.parentElement!.textContent)).toEqual([
+      'Número al agua N° 5',
+      'Número al agua N° 1',
+    ]);
+    expect(within(bici).getByText('Cómo salió el 5')).toBeInTheDocument();
+    expect(within(bici).getByText('Sorteo externo: Tómbola en vivo')).toBeInTheDocument();
+    expect(within(bici).getByText('Número ganador', { exact: false }).parentElement).toHaveTextContent('Número ganador N° 4');
+    expect(within(canasta).getByText('Por sortear')).toBeInTheDocument();
+    expect(within(canasta).getByText('Se fue al agua')).toBeInTheDocument();
+    expect(within(canasta).queryByText('Número ganador', { exact: false })).not.toBeInTheDocument();
   });
 });
