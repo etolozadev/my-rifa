@@ -60,8 +60,8 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
     <div className="stack gap16">
       <div className="row between">
         <div className="field grow">
-          <label htmlFor="q" className="sr-only">Buscar</label>
-          <input id="q" type="search" placeholder="Buscar por nombre, contacto o número" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <label htmlFor="q" className="sr-only">Buscar por nombre, contacto o número</label>
+          <input id="q" type="search" placeholder="Nombre, teléfono o número" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <button className="btn primary" onClick={() => setSale(true)}>Registrar venta</button>
       </div>

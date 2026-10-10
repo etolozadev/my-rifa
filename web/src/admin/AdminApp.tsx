@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { SignOutIcon, TicketIcon } from '../components/icons';
 import { adminApi, type User } from '../lib/admin';
+import { ApiError } from '../lib/api';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { LoginPage } from './LoginPage';
 import { NewRafflePage } from './NewRafflePage';
@@ -13,10 +14,22 @@ import { SessionContext, useSession } from './session';
 export function AdminApp() {
   // undefined = verificando la sesión; null = sin sesión
   const [user, setUser] = useState<User | null | undefined>(undefined);
+  // Sin conexión no se sabe si hay sesión: se avisa y se reintenta, en vez de mandar a ingresar de nuevo
+  const [offline, setOffline] = useState(false);
 
-  useEffect(() => {
-    adminApi.me().then(setUser, () => setUser(null));
+  const check = useCallback(() => {
+    setOffline(false);
+    adminApi.me().then(setUser, (err) => {
+      if (err instanceof ApiError && err.code === 'network') setOffline(true);
+      else setUser(null);
+    });
   }, []);
+  useEffect(check, [check]);
+  useEffect(() => {
+    if (!offline) return;
+    window.addEventListener('online', check);
+    return () => window.removeEventListener('online', check);
+  }, [offline, check]);
 
   const logout = useCallback(async () => {
     try {
@@ -28,6 +41,15 @@ export function AdminApp() {
   const expired = useCallback(() => setUser(null), []);
   const session = useMemo(() => (user ? { user, logout, expired } : null), [user, logout, expired]);
 
+  if (offline) {
+    return (
+      <div className="center" role="alert">
+        <h1>Sin conexión</h1>
+        <p className="muted">No se pudo conectar con el servidor. Revisa tu internet; el panel se abre solo apenas vuelva.</p>
+        <button className="btn primary" onClick={check}>Reintentar</button>
+      </div>
+    );
+  }
   if (user === undefined) return <div className="center" role="status">Cargando…</div>;
 
   return (
@@ -65,7 +87,7 @@ function Shell() {
             mis-rifas
           </Link>
           <div className="row">
-            <span className="muted small">{user.nombre}</span>
+            <span className="muted small who">{user.nombre}</span>
             <button type="button" className="btn small" onClick={logout}>
               <SignOutIcon size={16} aria-hidden="true" />
               Salir

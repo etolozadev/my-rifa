@@ -161,16 +161,17 @@ export function RafflePage() {
           </section>
         )}
 
-        {raffle.datosBancarios && (
-          <BankCard bank={raffle.datosBancarios} note="Primero reserva tus números; al reservar verás el monto exacto y podrás subir tu comprobante." />
-        )}
-
         <section aria-labelledby="grid-title" className="stack">
           <h2 id="grid-title">{open ? 'Elige tus números' : 'Números'}</h2>
           {open && <p className="muted small">Toca los números disponibles, o elige un talonario completo. Máximo {raffle.maxNumerosPorOrden} números sueltos por orden.</p>}
           {notice && <div className="banner" role="status">{notice}</div>}
           <NumberGrid raffle={raffle} selection={selection} onToggle={onToggle} onToggleBooklet={onToggleBooklet} readOnly={!open} />
         </section>
+
+        {/* Después de los números: primero se elige y reserva; el monto exacto se ve al reservar */}
+        {raffle.datosBancarios && (
+          <BankCard bank={raffle.datosBancarios} note="Primero reserva tus números; al reservar verás el monto exacto y podrás subir tu comprobante." />
+        )}
       </main>
 
       {open && sorted.length > 0 && (

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { adminApi } from '../lib/admin';
 import { longDate } from '../lib/format';
 import { RAFFLE_STATE } from './labels';
+import { InstallCard } from './InstallCard';
 import { useAdminLoad } from './session';
 
 export function RafflesPage() {
@@ -13,6 +14,8 @@ export function RafflesPage() {
         <h1>Mis rifas</h1>
         <Link className="btn primary" to="/admin/rifas/nueva">Nueva rifa</Link>
       </div>
+
+      <InstallCard />
 
       {loading && <p role="status">Cargando…</p>}
       {!loading && !raffles && (

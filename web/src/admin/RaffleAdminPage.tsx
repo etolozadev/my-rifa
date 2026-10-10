@@ -57,7 +57,7 @@ export function RaffleAdminPage() {
   return (
     <main className="page wide">
       <Link to="/admin" className="link-back"><ArrowLeftIcon size={16} aria-hidden="true" />Mis rifas</Link>
-      <header className="stack">
+      <header className="stack raffle-head">
         <div className="row between">
           <h1>{raffle.nombre}</h1>
           <span className={`chip ${st.cls}`}>{st.label}</span>

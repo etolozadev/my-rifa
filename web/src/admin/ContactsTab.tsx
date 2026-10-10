@@ -68,8 +68,8 @@ export function ContactsTab({ raffle }: { raffle: AdminRaffle }) {
 
       <div className="row between">
         <div className="field grow">
-          <label htmlFor="contacts-q" className="sr-only">Buscar contacto</label>
-          <input id="contacts-q" type="search" placeholder="Buscar por nombre, teléfono o nota" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <label htmlFor="contacts-q" className="sr-only">Buscar contacto por nombre, teléfono o nota</label>
+          <input id="contacts-q" type="search" placeholder="Nombre, teléfono o nota" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         {!adding && <button className="btn primary" onClick={() => setAdding(true)}>Agregar contacto</button>}
       </div>

@@ -27,7 +27,7 @@ no es un teléfono, el botón copia el mensaje.
 ```bash
 npm install
 npm run dev        # http://localhost:5173, reenvía /api a http://localhost:3000 (cambia con API_URL)
-npm test           # 92 tests (selección, carga rápida, verificación y escenario del sorteo, contactos, pestañas y flujos de comprador y panel con la API simulada)
+npm test           # 98 tests (selección, carga rápida, verificación y escenario del sorteo, contactos, pestañas y flujos de comprador y panel con la API simulada)
 npm run typecheck
 npm run build      # genera dist/
 ```
@@ -94,6 +94,22 @@ La idea es el **talonario de rifa en papel**:
 Con Docker, la imagen `prod` de `Dockerfile` sirve `dist/` con Nginx (`nginx.conf`) y reenvía `/api` al contenedor de la API;
 ver "Producción con Docker" en el README de la raíz. Con el front y la API bajo el mismo dominio no hace falta CORS y las
 cookies del panel funcionarán sin ajustes.
+
+## App instalable (PWA)
+
+- `public/manifest.webmanifest`: nombre, íconos (`public/icons/`, el boleto de la marca) y modo pantalla completa.
+  Abre en `/admin`. En iPhone se instala desde Compartir → "Agregar a inicio" (metaetiquetas en `index.html`).
+- `public/sw.js` (solo en producción): nunca guarda `/api`; páginas primero desde la red (sin conexión, la última
+  copia); archivos con hash desde el caché. Nginx sirve `sw.js` y el manifiesto sin caché, así cada despliegue llega.
+- El panel muestra la tarjeta "Instala mis-rifas" cuando el navegador lo permite (`beforeinstallprompt`) o en iPhone
+  (con las instrucciones); se puede descartar. Sin conexión, el panel avisa en vez de pedir ingresar de nuevo.
+- Requiere HTTPS (en producción lo pone Coolify); en `localhost` también funciona para probar.
+
+## Celulares
+
+Diseño desde 320 px de ancho, sin desplazamiento horizontal de la página. En el panel, en pantallas chicas, la barra
+superior se va al bajar y las pestañas quedan fijas arriba; los filtros van en una fila que se desliza. En la página
+de la rifa, los datos para transferir aparecen después de los números (primero se elige y reserva).
 
 ## Sonidos del sorteo
 

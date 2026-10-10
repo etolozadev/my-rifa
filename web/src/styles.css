@@ -89,14 +89,14 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row.end { align-items: flex-end; }
 .between { justify-content: space-between; }
-.stack { display: grid; gap: 8px; }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .gap16 { gap: 16px; }
 .grow { flex: 1 1 240px; }
 .center { text-align: center; padding: 48px 16px; display: grid; gap: 12px; justify-items: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- Página y superficies ---- */
-.page { max-width: 720px; margin: 0 auto; padding: 16px 16px 120px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.page { max-width: 720px; margin: 0 auto; padding: 16px max(16px, env(safe-area-inset-right)) 120px max(16px, env(safe-area-inset-left)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .page > * { min-width: 0; }
 .page.wide { max-width: 980px; padding-bottom: 48px; }
 .page.narrow { max-width: 440px; padding-top: 48px; }
@@ -156,7 +156,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 /* ---- Avance ---- */
 .progress { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--primary); border-radius: 999px; transition: width 0.4s; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 8px; }
 .fact { background: var(--surface-2); border-radius: var(--r-control); padding: 10px 12px; }
 .fact b { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .fact span { font-size: 0.8125rem; color: var(--ink-2); }
@@ -230,13 +230,13 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .bar > div { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .bar .total { font-weight: 800; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
 .overlay { position: fixed; inset: 0; background: rgba(8, 20, 28, 0.6); z-index: 30; display: flex; align-items: flex-end; justify-content: center; }
-.sheet { background: var(--surface); width: 100%; max-width: 560px; border-radius: 20px 20px 0 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); display: grid; gap: 14px; max-height: 92vh; overflow: auto; box-shadow: var(--lift); }
+.sheet { background: var(--surface); width: 100%; max-width: 560px; border-radius: 20px 20px 0 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-height: 92dvh; overflow: auto; overscroll-behavior: contain; box-shadow: var(--lift); }
 @media (min-width: 640px) { .overlay { align-items: center; } .sheet { border-radius: 20px; } }
 
 /* ---- Formularios ---- */
-.field { display: grid; gap: 6px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
 .field label { font-weight: 650; font-size: 0.9375rem; }
-.field input, .field select, .field textarea { min-height: 48px; border-radius: var(--r-control); border: 1.5px solid var(--line-strong); background: var(--surface); padding: 0 12px; font-size: 1rem; }
+.field input, .field select, .field textarea { width: 100%; min-width: 0; min-height: 48px; border-radius: var(--r-control); border: 1.5px solid var(--line-strong); background: var(--surface); padding: 0 12px; font-size: 1rem; }
 .field select { padding-right: 8px; }
 .field textarea { padding: 10px 12px; min-height: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.9375rem; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-tint); }
@@ -253,17 +253,18 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .upload input[type='file'] { width: 100%; max-width: 100%; }
 fieldset.card { margin: 0; }
 fieldset.card legend { font-weight: 750; font-size: 1.1rem; padding: 0 4px; float: left; width: 100%; margin-bottom: 4px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+.grid2 > * { min-width: 0; }
 .subform { display: grid; gap: 12px; padding: 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-card); }
 .url { display: block; padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); overflow-wrap: anywhere; font-size: 0.875rem; }
 
 /* ---- Panel ---- */
-.topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
-.topbar > div { max-width: 980px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; padding-top: env(safe-area-inset-top); }
+.topbar > div { max-width: 980px; margin: 0 auto; padding: 8px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .topbar .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
 .topbar .brand svg { color: var(--primary); }
 /* Pestañas: si no caben se desplazan (dedo, rueda, teclado o flechas); nada queda oculto sin forma de llegar */
-.tabbar { position: relative; border-bottom: 1px solid var(--line); min-width: 0; }
+.tabbar { position: relative; border-bottom: 1px solid var(--line); min-width: 0; background: var(--paper); }
 .tabs { display: flex; gap: 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent; scroll-padding-inline: 44px; }
 .tabs::-webkit-scrollbar { height: 4px; }
 .tabs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
@@ -296,6 +297,30 @@ fieldset.card legend { font-weight: 750; font-size: 1.1rem; padding: 0 4px; floa
 .table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table th { position: sticky; top: 0; background: var(--surface-2); font-weight: 700; }
 .banner .stack { margin-top: 8px; font-weight: 400; }
+/* Invitación a instalar la app */
+.install { border-color: var(--primary); }
+.install-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.install-head svg { color: var(--primary); margin-top: 2px; }
+.install-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.install-steps svg { vertical-align: -4px; }
+
+/* ---- Panel en el celular ----
+   La barra superior se va al bajar y las pestañas quedan fijas arriba: siempre se puede cambiar de sección.
+   Los filtros van en una sola fila que se desliza, en vez de ocupar tres filas antes de los resultados. */
+@media (max-width: 719px) {
+  .topbar { position: static; }
+  .tabbar { position: sticky; top: 0; z-index: 9; margin: 0 -16px; padding: 0 16px; box-shadow: 0 8px 16px -14px rgba(15, 42, 61, 0.6); }
+  .raffle-head h1 { font-size: 1.45rem; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px; scroll-padding-inline: 16px; }
+  .filters::-webkit-scrollbar { display: none; }
+  .filters > * { flex: none; }
+  .topbar .who { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* En pantallas táctiles la barra de desplazamiento de las pestañas sobra: se desliza con el dedo */
+@media (pointer: coarse) {
+  .tabs { scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+}
 
 /* ---- Sorteo y resultados ---- */
 .results { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
@@ -325,6 +350,12 @@ details summary { cursor: pointer; color: var(--primary-strong); font-weight: 65
 @media (prefers-color-scheme: dark) { .water-title { color: var(--primary); } }
 .water-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .water-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+/* En pantallas chicas el boleto ganador va arriba de sus datos, y "Anular" debajo del número al agua */
+@media (max-width: 479px) {
+  .stack > .result-row { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 8px; }
+  .water-row { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .water-row > .btn { grid-column: 2; justify-self: start; }
+}
 .results .water-list > li { display: grid; gap: 6px; justify-items: start; }
 .water .chip { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); text-decoration: line-through; text-decoration-thickness: 2px; font-variant-numeric: tabular-nums; }
 
