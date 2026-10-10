@@ -81,7 +81,20 @@ export function OrderPage() {
           Transfiere {money(order.monto)} antes del {shortDate(order.venceEn)} ({timeLeft(order.venceEn)}); después sube tu comprobante.
         </div>
       )}
-      {order.estado === 'pagada' && <div className="banner ok">¡Listo! Tu pago está confirmado y tus números participan del sorteo.</div>}
+      {order.premios && order.premios.length > 0 ? (
+        <div className="banner ok winner-banner" role="status">
+          ¡Felicitaciones!{' '}
+          {order.premios.map((p) => `Tu número ${p.numero} ganó el ${p.orden}° premio: ${p.nombre}.`).join(' ')} El organizador te contactará para
+          entregártelo.
+        </div>
+      ) : (
+        order.estado === 'pagada' &&
+        (order.rifa.estado === 'sorteada' ? (
+          <div className="banner">El sorteo ya se realizó. Revisa los resultados en la página de la rifa. ¡Gracias por participar!</div>
+        ) : (
+          <div className="banner ok">¡Listo! Tu pago está confirmado y tus números participan del sorteo.</div>
+        ))
+      )}
       {order.estado === 'vencida' && (
         <div className="banner error">
           Tu reserva venció y los números se liberaron. Si ya transferiste, avísale al organizador: puede reactivarla si los números siguen libres.

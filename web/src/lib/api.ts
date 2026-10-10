@@ -37,6 +37,22 @@ export interface PublicRaffle {
   numeros: { n: number; e: TicketState }[];
   /** Presente cuando se compra con el enlace de un vendedor (?v=) */
   vendedor?: { nombre: string } | null;
+  /** Resultados del sorteo, incluidos los anulados (con su motivo) */
+  sorteos?: PublicDraw[];
+}
+
+export interface PublicDraw {
+  id: number;
+  premio: { id: number; orden: number; nombre: string };
+  numero: number;
+  modo: 'aleatorio' | 'manual';
+  semilla: string | null;
+  participantes: number;
+  posicion: number | null;
+  detalle: string | null;
+  sorteadoEn: string;
+  anuladoEn: string | null;
+  motivoAnulacion: string | null;
 }
 
 export interface PrepaidLink {
@@ -63,9 +79,11 @@ export interface PublicOrder {
   compradorNombre: string;
   creadaEn: string;
   venceEn: string;
-  rifa: { nombre: string; slug: string; fechaSorteo: string };
+  rifa: { nombre: string; slug: string; fechaSorteo: string; estado?: PublicRaffle['estado'] };
   datosBancarios: BankData | null;
   comprobantes: { id: number; nombre: string; subidoEn: string }[];
+  /** Premios que ganaron los números de esta orden */
+  premios?: { numero: number; orden: number; nombre: string }[];
 }
 
 export interface ReserveBody {
@@ -124,6 +142,9 @@ export const api = {
     });
   },
   proofUrl: (token: string, id: number) => `/api/ordenes/${encodeURIComponent(token)}/comprobantes/${id}`,
+
+  drawParticipants: (slug: string, drawId: number) =>
+    request<{ numeros: number[] }>(`/rifas/${encodeURIComponent(slug)}/sorteos/${drawId}/participantes`),
 
   getLink: (token: string) => request<PrepaidLink>(`/enlaces/${encodeURIComponent(token)}`),
   useLink: (token: string, body: Omit<ReserveBody, 'vendedor'>) =>

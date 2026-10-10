@@ -3,6 +3,7 @@ import { QueryTypes, Transaction } from 'sequelize';
 import { sequelize } from '../db';
 import { conflict, badRequest, notFound } from '../errors';
 import { Order, Raffle } from '../models';
+import { drawsStarted } from './draws';
 import { audit } from './raffles';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -104,6 +105,10 @@ export async function reserve(raffle: any, input: ReserveInput, outer?: Transact
     if (raffle.estado !== 'activa') throw conflict('La rifa no está recibiendo reservas');
     if (new Date(raffle.fechaSorteo).getTime() <= Date.now()) throw conflict('La venta cerró: ya llegó la fecha del sorteo');
   }
+  // Ya sorteado: ninguna venta nueva (tampoco las registradas por el equipo) habría participado
+  if (raffle.estado === 'sorteada' || (await drawsStarted(raffle.id))) {
+    throw conflict('La rifa ya se sorteó: no se pueden registrar más ventas');
+  }
   const numeros = orderNumbers(raffle, input);
   if (canal === 'web' && input.tipo === 'numeros' && numeros.length > raffle.maxNumerosPorOrden) {
     throw badRequest(`Máximo ${raffle.maxNumerosPorOrden} números por orden`);
@@ -160,6 +165,9 @@ export async function confirmOrder(orderId: number, userId: number) {
     const order = await lockOrder(orderId, t);
     if (order.estado === 'pagada') return order; // idempotente
     if (order.estado === 'cancelada') throw conflict('La orden está cancelada');
+    if (await drawsStarted(order.raffleId, t)) {
+      throw conflict('La rifa ya se sorteó y estos números no participaron: devuelve el pago o cancela la orden');
+    }
 
     if (order.estado === 'pendiente') {
       await sequelize.query(
@@ -187,6 +195,11 @@ export async function cancelOrder(orderId: number, userId: number) {
   return sequelize.transaction(async (t) => {
     const order = await lockOrder(orderId, t);
     if (order.estado === 'cancelada') return order;
+    const [won] = (await sequelize.query(
+      `SELECT t.numero FROM draws d JOIN tickets t ON t.id = d.ticket_id WHERE t.order_id = :id AND d.anulado_en IS NULL LIMIT 1`,
+      { replacements: { id: order.id }, type: QueryTypes.SELECT, transaction: t },
+    )) as { numero: number }[];
+    if (won) throw conflict(`El número ${won.numero} de esta orden ganó un premio: anula ese sorteo antes de cancelar`);
     const previo = order.estado;
     await sequelize.query(
       `UPDATE tickets SET estado = 'disponible', order_id = NULL WHERE order_id = :id`,
@@ -205,6 +218,7 @@ export async function cancelOrder(orderId: number, userId: number) {
 export async function extendOrder(orderId: number, userId: number, dias: number) {
   return sequelize.transaction(async (t) => {
     const order = await lockOrder(orderId, t);
+    if (await drawsStarted(order.raffleId, t)) throw conflict('La rifa ya se sorteó: no se pueden extender reservas');
     if (order.estado === 'pendiente') {
       order.venceEn = new Date(new Date(order.venceEn).getTime() + dias * DAY_MS);
     } else if (order.estado === 'vencida') {

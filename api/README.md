@@ -1,4 +1,4 @@
-# mis-rifas · API (fases 1 y 2)
+# mis-rifas · API (fases 1, 2 y 3)
 
 API en Node.js + Express + TypeScript + Sequelize + PostgreSQL para organizar rifas: talonarios y números,
 reserva pública con vencimiento a 7 días, comprobantes de pago y confirmación por el equipo.
@@ -23,7 +23,7 @@ Las cuentas se crean por script porque es una plataforma personal (`ALLOW_REGIST
 
 ```bash
 createdb rifas_test             # una vez; usa TEST_DATABASE_URL si tu base es otra (en Docker ya existe)
-npm test                        # 48 tests de integración contra PostgreSQL real (fase 1 y fase 2)
+npm test                        # 60 tests de integración contra PostgreSQL real (fases 1, 2 y 3)
 npm run typecheck
 ```
 
@@ -93,9 +93,33 @@ Errores: `{ "error": { "code", "message", "details" } }`.
 - El esquema de la fase 2 se agrega al final de `db/schema.sql` con `ADD COLUMN IF NOT EXISTS` y `CREATE TABLE IF NOT
   EXISTS`, así se aplica sin pasos manuales sobre una base de la fase 1.
 
-## Qué falta (según las fases de la especificación)
+## Fase 3: sorteo y avisos
 
-- **Fase 3**: sorteo (`draws` ya existe, con los índices que impiden repetir premio o ganador) y avisos.
+Endpoints: `GET /api/admin/rifas/:id/sorteos` (organizador y editores, con datos del ganador) ·
+`POST /api/admin/rifas/:id/sorteos` (organizador: `premioId`, `modo: aleatorio|manual`, `numero` y `detalle` si es manual,
+`confirmarPendientes`) · `POST /api/admin/sorteos/:id/anular` (organizador, `motivo`) ·
+`GET /api/rifas/:slug/sorteos/:id/participantes` (público). La vista pública de la rifa incluye `sorteos` (sin datos del
+ganador) y la de la orden incluye `premios` ganados.
+
+- **Cuándo**: solo con la venta cerrada. Si hay reservas pendientes vigentes la API responde 409 `pending_orders` (con
+  cuántas tienen comprobante) y se sortea solo si se confirma con `confirmarPendientes`: no participan.
+- **Participantes**: los números pagados que no ganaron otro premio, ordenados. Se guarda la lista en el sorteo.
+- **Al azar y verificable**: semilla de 32 bytes aleatorios (`crypto.randomBytes`); posición ganadora =
+  `SHA-256(semilla)` leído como entero, módulo la cantidad de participantes. Semilla, lista y posición son públicas y la
+  página de la rifa lo recalcula en el navegador ("Verificar en mi navegador").
+- **Externo** (Lotería, tómbola en vivo): se registra el número y de dónde salió; debe ser un número pagado que no haya ganado.
+- **Un premio, un ganador; un número, un premio**: índices únicos parciales sobre sorteos vigentes, y el sorteo bloquea la
+  rifa (`FOR UPDATE`) para que dos clics simultáneos no sorteen dos veces (hay un test con 5 sorteos a la vez).
+- **Anular** (ganador inubicable, error al anotar): solo el organizador y con motivo. El sorteo anulado se conserva y se
+  publica con su motivo; el premio se puede volver a sortear y el número anulado vuelve a participar.
+- **Al terminar**: con todos los premios sorteados la rifa pasa a `sorteada`. Desde el primer sorteo no se registran ni
+  confirman ventas, no se extienden reservas, no se reabre la venta, no se cancela una orden ganadora ni se borra un premio sorteado.
+- **Avisos por correo** al organizador y editores (opcional, `SMTP_URL`): comprobante nuevo y resultado de cada sorteo,
+  con el enlace al panel. Se envían sin bloquear la respuesta; si fallan quedan en el log. Los compradores dejan teléfono,
+  así que sus avisos son mensajes de WhatsApp ya redactados en el panel (recordatorio de pago, pago confirmado, ganador).
+
+## Pendiente
+
 - Captcha en la reserva pública (hoy hay límite de frecuencia por IP).
 
 ## Despliegue (VPS)

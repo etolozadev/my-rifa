@@ -1,5 +1,6 @@
 # mis-rifas · entorno de desarrollo
 #   docker compose up --build        → web http://localhost:5173 · API http://localhost:3000 · Postgres localhost:5432
+#                                      correos de aviso en http://localhost:8025 (Mailpit)
 # Producción: docker-compose.prod.yml
 
 name: mis-rifas-dev
@@ -35,6 +36,8 @@ services:
       UPLOADS_DIR: ./storage/comprobantes
       WEB_ORIGIN: http://localhost:5173
       ALLOW_REGISTRATION: "false"
+      SMTP_URL: smtp://mailpit:1025 # los avisos por correo se ven en http://localhost:8025
+      MAIL_FROM: mis-rifas <avisos@mis-rifas.test>
       CHOKIDAR_USEPOLLING: "true" # recarga fiable con carpetas montadas desde Windows/macOS
     ports:
       - "3000:3000"
@@ -44,6 +47,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Captura los correos de desarrollo (no salen a internet): bandeja en http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
 
   web:
     build:

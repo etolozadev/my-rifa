@@ -6,6 +6,7 @@ import { longDate, money } from '../lib/format';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { BulkTab } from './BulkTab';
 import { CopyLink } from './CopyLink';
+import { DrawTab } from './DrawTab';
 import { RAFFLE_STATE } from './labels';
 import { LinksTab } from './LinksTab';
 import { NumbersTab } from './NumbersTab';
@@ -23,6 +24,7 @@ const TABS: { key: string; label: string; roles: Rol[] }[] = [
   { key: 'vendedores', label: 'Vendedores', roles: TEAM },
   { key: 'carga', label: 'Carga rápida', roles: ALL },
   { key: 'enlaces', label: 'Enlaces de pago', roles: ALL },
+  { key: 'sorteo', label: 'Sorteo', roles: TEAM },
   { key: 'configuracion', label: 'Configuración', roles: ['organizador'] },
 ];
 
@@ -75,6 +77,7 @@ export function RaffleAdminPage() {
       {allowed && tab === 'vendedores' && <SellersTab raffle={raffle} />}
       {allowed && tab === 'carga' && <BulkTab raffle={raffle} onChanged={reload} />}
       {allowed && tab === 'enlaces' && <LinksTab raffle={raffle} />}
+      {allowed && tab === 'sorteo' && <DrawTab raffle={raffle} onChanged={reload} />}
       {allowed && tab === 'configuracion' && <SettingsTab raffle={raffle} onChanged={reload} />}
     </main>
   );

@@ -36,6 +36,9 @@ services:
       UPLOADS_DIR: /app/storage/comprobantes
       WEB_ORIGIN: ${WEB_ORIGIN:?Define WEB_ORIGIN en .env (ej. https://rifas.estebantoloza.cl)}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      # Avisos por correo al equipo (opcional): sin SMTP_URL no se envían
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-mis-rifas <no-responder@localhost>}
     volumes:
       - uploads:/app/storage # comprobantes de pago: respáldalos junto con la base
     depends_on:

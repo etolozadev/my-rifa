@@ -2,28 +2,26 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, type AdminOrder, type AdminRaffle } from '../lib/admin';
 import { money, plural, shortDate, timeLeft } from '../lib/format';
+import { orderMessage, whatsappLink } from '../lib/messages';
 import { CHANNEL, ORDER_STATE } from './labels';
 import { ManualSaleSheet } from './ManualSaleSheet';
+import { NotifyButton } from './NotifyButton';
 import { useAdminLoad } from './session';
 
-type Filter = 'revisar' | 'pendiente' | 'pagada' | 'vencida' | 'cancelada' | 'todas';
+type Filter = 'revisar' | 'pendiente' | 'porVencer' | 'pagada' | 'vencida' | 'cancelada' | 'todas';
+
+/** Pendientes que vencen en menos de 48 horas: candidatas a un recordatorio */
+const SOON_MS = 48 * 3600 * 1000;
 
 const FILTERS: { key: Filter; label: string; test: (o: AdminOrder) => boolean }[] = [
   { key: 'revisar', label: 'Por revisar', test: (o) => o.estado === 'pendiente' && o.comprobantes.length > 0 },
   { key: 'pendiente', label: 'Pendientes', test: (o) => o.estado === 'pendiente' },
+  { key: 'porVencer', label: 'Vencen pronto', test: (o) => o.estado === 'pendiente' && new Date(o.venceEn).getTime() - Date.now() < SOON_MS },
   { key: 'pagada', label: 'Pagadas', test: (o) => o.estado === 'pagada' },
   { key: 'vencida', label: 'Vencidas', test: (o) => o.estado === 'vencida' },
   { key: 'cancelada', label: 'Canceladas', test: (o) => o.estado === 'cancelada' },
   { key: 'todas', label: 'Todas', test: () => true },
 ];
-
-/** Enlace de WhatsApp si el contacto parece un teléfono chileno o internacional */
-export function whatsappLink(contact: string): string | null {
-  const digits = contact.replace(/\D/g, '');
-  if (digits.length === 9 && digits.startsWith('9')) return `https://wa.me/56${digits}`;
-  if (digits.length >= 10 && digits.length <= 15) return `https://wa.me/${digits}`;
-  return null;
-}
 
 export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged: () => void }) {
   const { data: orders, error, loading, reload } = useAdminLoad(() => adminApi.orders(raffle.id));
@@ -83,7 +81,7 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
       <ul className="list">
         {visible.map((o) => (
           <li key={o.id}>
-            <OrderCard order={o} onChanged={refresh} />
+            <OrderCard order={o} raffle={raffle} onChanged={refresh} />
           </li>
         ))}
       </ul>
@@ -103,7 +101,8 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
   );
 }
 
-function OrderCard({ order: o, onChanged }: { order: AdminOrder; onChanged: () => Promise<void> }) {
+function OrderCard({ order: o, raffle, onChanged }: { order: AdminOrder; raffle: AdminRaffle; onChanged: () => Promise<void> }) {
+  const message = orderMessage(o, raffle);
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +169,7 @@ function OrderCard({ order: o, onChanged }: { order: AdminOrder; onChanged: () =
 
       {o.estado !== 'cancelada' && (
         <div className="row">
+          {message && <NotifyButton contact={o.compradorContacto} text={message} label={o.estado === 'pendiente' ? 'Recordar pago' : 'Avisar por WhatsApp'} />}
           {(o.estado === 'pendiente' || o.estado === 'vencida') && (
             <button className="btn small primary" disabled={busy} onClick={() => run(() => adminApi.confirmOrder(o.id))}>
               Confirmar pago

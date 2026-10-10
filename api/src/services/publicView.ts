@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../db';
 import { Prize } from '../models';
+import { listDraws } from './draws';
 import { raffleSummary } from './raffles';
 
 export const bankOf = (r: any) => ({
@@ -52,5 +53,7 @@ export async function publicRaffle(raffle: any, viewerSellerId: number | null = 
       talonariosDisponibles: resumen.talonariosDisponibles,
     },
     numeros,
+    // Resultados del sorteo (incluidos los anulados, con su motivo), sin datos del ganador
+    sorteos: await listDraws(raffle.id, false),
   };
 }

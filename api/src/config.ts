@@ -12,6 +12,10 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // Avisos por correo al equipo (opcional): smtp://usuario:clave@servidor:587 o smtps://…:465.
+  // Sin SMTP_URL no se envían correos (la plataforma funciona igual).
+  SMTP_URL: z.string().optional(),
+  MAIL_FROM: z.string().default('mis-rifas <no-responder@localhost>'),
 });
 
 export const config = schema.parse(process.env);

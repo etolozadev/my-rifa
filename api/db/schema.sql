@@ -195,3 +195,17 @@ CREATE TABLE IF NOT EXISTS invitations (
   revocada_en TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS invitations_raffle_idx ON invitations (raffle_id);
+
+-- ============================================================================
+-- Fase 3: sorteo verificable.
+-- Aleatorio: posicion = SHA-256(semilla) mod cantidad de participantes, sobre la lista ordenada de números
+-- pagados al momento del sorteo (guardada en `participantes`). Manual: número de un sorteo externo
+-- (Lotería, tómbola en vivo) con su detalle. Los sorteos anulados se conservan y se publican con su motivo.
+-- ============================================================================
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS modo TEXT NOT NULL DEFAULT 'aleatorio' CHECK (modo IN ('aleatorio', 'manual'));
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS semilla TEXT;
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS participantes INTEGER[];
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS posicion INTEGER;
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS detalle TEXT;
+ALTER TABLE draws ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT;
+CREATE INDEX IF NOT EXISTS draws_raffle_idx ON draws (raffle_id);

@@ -3,12 +3,19 @@
 Plataforma personal para organizar rifas (a beneficio, viajes de estudio, metas): talonarios y números, reserva pública con
 vencimiento a 7 días, pago por transferencia con comprobante y confirmación por el organizador.
 
-- `api/`: API Node.js + Express + Sequelize + PostgreSQL (fase 1 completa). Ver `api/README.md`.
-- `web/`: front en React: página pública (ver la rifa, reservar, seguir la orden, enlaces de vendedor y de pago previo) y panel del equipo en `/admin`
-  (crear y activar rifas, confirmar pagos con sus comprobantes, ventas físicas, números, premios y editores). Ver `web/README.md`.
+- `api/`: API Node.js + Express + Sequelize + PostgreSQL. Ver `api/README.md`.
+- `web/`: front en React: página pública (ver la rifa, reservar, seguir la orden, enlaces de vendedor y de pago previo,
+  resultados del sorteo verificables) y panel del equipo en `/admin`. Ver `web/README.md`.
 
-Fase 2 completa: vendedores con enlace propio y talonarios asignados, carga rápida e importación CSV, enlaces de pago
-previo para quien ya pagó, e invitaciones por link. Siguiente paso (fase 3): sorteo y avisos.
+Las tres fases de la especificación están implementadas:
+
+1. **Venta**: talonarios y números sin doble venta, reserva con vencimiento, comprobantes, confirmación de pagos y panel.
+2. **Equipo y canales**: vendedores con enlace propio y talonarios asignados, carga rápida e importación CSV, enlaces de
+   pago previo para quien ya pagó, e invitaciones por link.
+3. **Sorteo y avisos**: sorteo al azar verificable (o resultado externo, como la Lotería), anulaciones públicas con
+   motivo, avisos por correo al equipo y mensajes de WhatsApp ya redactados para los compradores.
+
+Pendiente fuera de las fases: captcha en la reserva pública (hoy hay límite de frecuencia por IP).
 
 ## Desarrollo con Docker
 
@@ -24,6 +31,7 @@ Luego entra a http://localhost:5173/admin con ese correo para crear tu primera r
 - El código de `api/` y `web/` se monta en los contenedores: la API se reinicia al guardar (tsx) y el front recarga con HMR.
 - El esquema se aplica solo al arrancar la API (`db:init` es idempotente). La base `rifas_test` se crea junto al volumen.
 - Postgres usa `rifas` / `rifas` y queda publicado en `localhost:5432` (para pgAdmin, DBeaver o correr la API fuera de Docker).
+- Los avisos por correo no salen a internet: los captura Mailpit y se ven en http://localhost:8025.
 
 | Tarea | Comando |
 | --- | --- |
@@ -54,6 +62,7 @@ En el VPS:
 ```bash
 git clone … mis-rifas && cd mis-rifas
 cp .env.example .env               # completa POSTGRES_PASSWORD, JWT_SECRET (openssl rand -hex 32) y WEB_ORIGIN
+                                   # opcional: SMTP_URL y MAIL_FROM para los avisos por correo al equipo
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec api node dist/scripts/create-user.js "Tu Nombre" tu@correo.cl "clave-larga"
 ```

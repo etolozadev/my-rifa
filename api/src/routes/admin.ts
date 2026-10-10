@@ -5,12 +5,14 @@ import { z } from 'zod';
 import { sequelize } from '../db';
 import { badRequest, conflict, forbidden, notFound, wrap } from '../errors';
 import { AuthedRequest, assertRole, csrfGuard, raffleRole, requireAuth } from '../middleware/auth';
-import { Order, PaymentProof, Prize, Raffle, RaffleMember, Seller, User } from '../models';
+import { Draw, Order, PaymentProof, Prize, Raffle, RaffleMember, Seller, User } from '../models';
 import { proofPath } from '../services/files';
 import { cancelOrder, confirmOrder, expireOrders, extendOrder, raffleOf, reserve } from '../services/orders';
 import { audit, createRaffle, raffleSummary, regenerateStructure } from '../services/raffles';
 import { addMember, removeMember, sellerStats, sellerOfUser } from '../services/sellers';
 import { teamRouter } from './team';
+import { drawsRouter } from './draws';
+import { drawsStarted } from '../services/draws';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, csrfGuard);
@@ -131,6 +133,9 @@ adminRouter.patch(
         if (body.estado === 'borrador' && raffle.estado !== 'borrador') {
           throw conflict('Una rifa activa no puede volver a borrador');
         }
+        if (body.estado === 'activa' && (await drawsStarted(raffle.id, t))) {
+          throw conflict('Ya hay premios sorteados: la venta no se puede reabrir');
+        }
       }
 
       const { estado, ...rest } = body;
@@ -157,6 +162,8 @@ adminRouter.post(
   organizer,
   wrap(async (req, res) => {
     const body = prizeBody.parse(req.body);
+    const raffle: any = await Raffle.findByPk(req.params.id);
+    if (raffle?.estado === 'sorteada') throw conflict('La rifa ya fue sorteada');
     const exists = await Prize.findOne({ where: { raffleId: req.params.id, orden: body.orden } });
     if (exists) throw conflict(`Ya existe un premio con orden ${body.orden}`);
     const prize = await Prize.create({ ...body, raffleId: Number(req.params.id) });
@@ -184,6 +191,8 @@ adminRouter.delete(
   '/rifas/:id/premios/:premioId',
   organizer,
   wrap(async (req, res) => {
+    // Un premio con sorteos (incluso anulados) se conserva: es parte del registro público del sorteo
+    if (await Draw.count({ where: { prizeId: req.params.premioId } })) throw conflict('Ese premio ya se sorteó: no se puede eliminar');
     const n = await Prize.destroy({ where: { id: req.params.premioId, raffleId: req.params.id } });
     if (!n) throw notFound('Premio no encontrado');
     res.status(204).end();
@@ -410,3 +419,6 @@ adminRouter.get(
 
 // Vendedores, enlaces de pago previo e invitaciones (fase 2)
 adminRouter.use(teamRouter);
+
+// Sorteo (fase 3)
+adminRouter.use(drawsRouter);

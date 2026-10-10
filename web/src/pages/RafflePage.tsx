@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BankCard } from '../components/BankCard';
+import { DrawResults } from '../components/DrawResults';
 import { NumberGrid } from '../components/NumberGrid';
 import { ReserveSheet } from '../components/ReserveSheet';
 import { api } from '../lib/api';
@@ -103,6 +104,7 @@ export function RafflePage() {
         {!open && raffle.estado === 'activa' && <div className="banner">La venta cerró porque ya llegó la fecha del sorteo.</div>}
         {raffle.estado === 'cerrada' && <div className="banner">La venta de esta rifa está cerrada. Ya no se aceptan reservas.</div>}
         {raffle.estado === 'sorteada' && <div className="banner ok">El sorteo ya se realizó. ¡Gracias por participar!</div>}
+        {raffle.sorteos && raffle.sorteos.length > 0 && <DrawResults slug={raffle.slug} draws={raffle.sorteos} />}
 
         {raffle.vendedor && open && (
           <div className="banner ok" role="status">Estás comprando con el enlace de {raffle.vendedor.nombre}.</div>

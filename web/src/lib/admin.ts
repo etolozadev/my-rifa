@@ -1,4 +1,4 @@
-import { request } from './api';
+import { request, type PublicDraw } from './api';
 
 export interface User {
   id: number;
@@ -242,7 +242,26 @@ export const adminApi = {
   invitations: (id: number) => request<InvitationView[]>(`/admin/rifas/${id}/invitaciones`),
   createInvitation: (id: number, rol: 'editor' | 'vendedor') => send<InvitationView>('POST', `/admin/rifas/${id}/invitaciones`, { rol }),
   revokeInvitation: (invId: number) => send<InvitationView>('POST', `/admin/invitaciones/${invId}/revocar`),
+
+  draws: (id: number) => request<AdminDraw[]>(`/admin/rifas/${id}/sorteos`),
+  drawPrize: (id: number, body: DrawInput) => send<AdminDraw>('POST', `/admin/rifas/${id}/sorteos`, body),
+  annulDraw: (drawId: number, motivo: string) => send<AdminDraw>('POST', `/admin/sorteos/${drawId}/anular`, { motivo }),
 };
+
+export interface AdminDraw extends PublicDraw {
+  ordenId: number | null;
+  compradorNombre: string | null;
+  compradorContacto: string | null;
+  vendedorNombre: string | null;
+}
+
+export interface DrawInput {
+  premioId: number;
+  modo: 'aleatorio' | 'manual';
+  numero?: number;
+  detalle?: string;
+  confirmarPendientes?: boolean;
+}
 
 /** Enlace de venta de un vendedor */
 export const sellerUrl = (slug: string, codigo: string) => `${window.location.origin}/r/${slug}?v=${encodeURIComponent(codigo)}`;

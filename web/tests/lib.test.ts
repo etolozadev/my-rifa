@@ -1,5 +1,5 @@
 import { ticketsCsv } from '../src/admin/NumbersTab';
-import { whatsappLink } from '../src/admin/OrdersTab';
+import { whatsappLink } from '../src/lib/messages';
 import { parseBulk, parseNumberList } from '../src/lib/admin';
 import { describe, expect, it } from 'vitest';
 import { money, plural, timeLeft } from '../src/lib/format';

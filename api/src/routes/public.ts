@@ -10,6 +10,8 @@ import { MAX_BYTES, proofPath, saveProof } from '../services/files';
 import { expireOrders, reserve } from '../services/orders';
 import { bankOf, publicRaffle } from '../services/publicView';
 import { sellerByCode } from '../services/sellers';
+import { drawParticipants, listDraws } from '../services/draws';
+import { money, notifyTeam, panelUrl } from '../services/mailer';
 
 export const publicRouter = Router();
 
@@ -74,6 +76,11 @@ publicRouter.get(
     await expireOrders();
     const order = await findOrderByToken(req.params.token);
     const raffle: any = await Raffle.findByPk(order.raffleId);
+    // Premios que ganó esta orden (solo números que siguen siendo suyos y pagados)
+    const won =
+      order.estado === 'pagada'
+        ? (await listDraws(raffle.id, false)).filter((d) => !d.anuladoEn && order.numeros.includes(d.numero))
+        : [];
     res.json({
       estado: order.estado,
       numeros: order.numeros,
@@ -81,9 +88,10 @@ publicRouter.get(
       compradorNombre: order.compradorNombre,
       creadaEn: order.creadaEn,
       venceEn: order.venceEn,
-      rifa: { nombre: raffle.nombre, slug: raffle.slug, fechaSorteo: raffle.fechaSorteo },
+      rifa: { nombre: raffle.nombre, slug: raffle.slug, fechaSorteo: raffle.fechaSorteo, estado: raffle.estado },
       datosBancarios: order.estado === 'pendiente' ? bankOf(raffle) : null,
       comprobantes: order.comprobantes.map((c: any) => ({ id: c.id, nombre: c.nombreOriginal, subidoEn: c.subidoEn })),
+      premios: won.map((d) => ({ numero: d.numero, orden: d.premio.orden, nombre: d.premio.nombre })),
     });
   }),
 );
@@ -105,7 +113,21 @@ publicRouter.post(
       mime: saved.mime,
       bytes: req.file.size,
     });
+    const raffle: any = await Raffle.findByPk(order.raffleId);
+    void notifyTeam(order.raffleId, `Comprobante nuevo en ${raffle.nombre}`, [
+      `${order.compradorNombre} subió un comprobante para la orden #${order.id}: números ${order.numeros.join(', ')} por ${money(order.monto)}.`,
+      `Revísalo y confirma el pago: ${panelUrl(`/rifas/${order.raffleId}/ordenes`)}`,
+    ]);
     res.status(201).json({ id: proof.id, nombre: proof.nombreOriginal, subidoEn: proof.subidoEn });
+  }),
+);
+
+// Números que participaron en un sorteo, para que cualquiera pueda verificarlo
+publicRouter.get(
+  '/rifas/:slug/sorteos/:drawId/participantes',
+  wrap(async (req, res) => {
+    const raffle = await findPublicRaffle(req.params.slug);
+    res.json({ numeros: await drawParticipants(raffle.id, Number(req.params.drawId)) });
   }),
 );
 

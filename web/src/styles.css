@@ -199,3 +199,18 @@ fieldset.card legend { font-weight: 700; font-size: 1.05rem; padding: 0 4px; flo
 .table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .table th { position: sticky; top: 0; background: var(--surface-2); font-weight: 700; }
 .banner .stack { margin-top: 8px; font-weight: 400; }
+
+/* ---- Fase 3: sorteo y resultados ---- */
+.results { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.results > li { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.results > li:first-child { border-top: 0; padding-top: 0; }
+.result-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+.result-row .rank { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-tint); color: var(--accent-strong); font-weight: 800; }
+.stack > .result-row { grid-template-columns: auto 1fr; }
+.winner { font-weight: 800; font-size: 1.1rem; font-variant-numeric: tabular-nums; padding: 6px 12px; border-radius: 12px; background: var(--accent); color: var(--on-accent); white-space: nowrap; }
+.winner.big { font-size: 1.6rem; padding: 8px 16px; }
+.drum { font-size: 2.4rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; padding: 18px; border-radius: var(--radius); background: var(--accent-tint); color: var(--accent-strong); }
+.proof { display: grid; gap: 8px; }
+.proof[open] { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.proof summary, details summary { cursor: pointer; color: var(--accent-strong); font-weight: 600; }
+.winner-banner { font-size: 1.05rem; }

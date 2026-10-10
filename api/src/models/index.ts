@@ -72,6 +72,12 @@ export const Invitation = define('Invitation', 'invitations', {
   usadaPor: int(true), usadaEn: ts(), revocadaEn: ts(),
 });
 
+export const Draw = define('Draw', 'draws', {
+  id, raffleId: int(), prizeId: int(), ticketId: int(), sorteadoPor: int(true), sorteadoEn: ts(false),
+  anuladoEn: ts(), modo: text(), semilla: text(true), participantes: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: true },
+  posicion: int(true), detalle: text(true), motivoAnulacion: text(true),
+});
+
 export const AuditLog = define('AuditLog', 'audit_log', {
   id, raffleId: int(true), userId: int(true), accion: text(), entidad: text(),
   entidadId: int(true), detalle: { type: DataTypes.JSONB, allowNull: false }, creadoEn: ts(false),

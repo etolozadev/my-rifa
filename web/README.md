@@ -12,6 +12,14 @@ orden (datos bancarios, plazo y comprobante). Incluye el panel del equipo en `/a
 | `/r/:slug?v=<codigo>` | La misma rifa con el enlace de un vendedor: avisa con quién se compra, muestra disponibles los números de su talonario y la reserva queda a su nombre. |
 | `/e/:token` | Enlace de pago previo: quien ya pagó N números elige exactamente N y su orden queda pagada. |
 | `/invitacion/:token` | Aceptar una invitación al equipo (crea la cuenta o, con sesión, se une con un clic). |
+
+Después del sorteo, `/r/:slug` muestra los **resultados**: número ganador por premio, el sorteo externo con su detalle, los
+anulados con su motivo y, para cada sorteo al azar, la semilla y un botón **Verificar en mi navegador** que descarga la
+lista de participantes y recalcula SHA-256(semilla) mod participantes con WebCrypto. El comprador ganador lo ve en `/orden/:token`.
+
+**Avisos a compradores**: en Órdenes cada orden tiene un mensaje de WhatsApp ya redactado según su estado (recordatorio de
+pago con los datos bancarios, pago confirmado, reserva vencida) y el filtro **Vencen pronto** (menos de 48 h). Si el contacto
+no es un teléfono, el botón copia el mensaje.
 | `/admin` | Panel del equipo (requiere sesión). Ver abajo. |
 
 ## Desarrollo
@@ -19,7 +27,7 @@ orden (datos bancarios, plazo y comprobante). Incluye el panel del equipo en `/a
 ```bash
 npm install
 npm run dev        # http://localhost:5173, reenvía /api a http://localhost:3000 (cambia con API_URL)
-npm test           # 54 tests (lógica de selección y carga rápida, flujos del comprador, del panel y de la fase 2 con la API simulada)
+npm test           # 63 tests (selección, carga rápida, verificación del sorteo y flujos de comprador, panel y fases 2 y 3 con la API simulada)
 npm run typecheck
 npm run build      # genera dist/
 ```
@@ -38,6 +46,7 @@ Levanta antes la API (`../api`, `npm run dev`) y abre `/r/<slug>` con el slug de
 | `/admin/rifas/:id/vendedores` | Organizador y editores: rendición por vendedor (vendidos, reservados, montos), su enlace y asignación de rangos de su talonario físico. |
 | `/admin/rifas/:id/carga` | **Carga rápida**: pegar o importar CSV con `números; nombre; contacto[; pagada]`, vista previa con errores por línea, atribución a un vendedor; tras cargar quedan en el cuadro solo las líneas que fallaron. |
 | `/admin/rifas/:id/enlaces` | **Enlaces de pago previo**: crear por N números (con comprador opcional), copiar, anular y ver si se usaron. |
+| `/admin/rifas/:id/sorteo` | **Sorteo** (organizador sortea; editores lo ven): cerrar la venta, sortear cada premio al azar (con animación de tómbola que solo muestra números participantes, salvo con movimiento reducido) o registrar un resultado externo, aviso si hay reservas sin pagar, avisar al ganador por WhatsApp y anular con motivo. |
 | `/admin/rifas/:id/configuracion` | Solo organizador: datos de la rifa y bancarios (precio y talonarios bloqueados fuera de borrador), premios, equipo (editores y vendedores por correo) e invitaciones por link. |
 
 Pestañas por rol: el **organizador** ve todas; el **editor** todas menos Configuración; el **vendedor** ve Resumen (con su
