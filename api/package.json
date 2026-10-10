@@ -5,8 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('db','dist/db',{recursive:true})\"",
+    "start": "node dist/src/server.js",
     "typecheck": "tsc --noEmit",
     "db:init": "tsx scripts/db-init.ts",
     "user:create": "tsx scripts/create-user.ts",

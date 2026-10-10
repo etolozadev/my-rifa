@@ -1,0 +1,64 @@
+# mis-rifas · entorno de desarrollo
+#   docker compose up --build        → web http://localhost:5173 · API http://localhost:3000 · Postgres localhost:5432
+# Producción: docker-compose.prod.yml
+
+name: mis-rifas-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rifas
+      POSTGRES_PASSWORD: rifas
+      POSTGRES_DB: rifas_dev
+    ports:
+      - "5432:5432" # también sirve para correr la API o los tests fuera de Docker
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro # crea rifas_test (solo con el volumen vacío)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rifas -d rifas_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./api
+      target: dev
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgres://rifas:rifas@db:5432/rifas_dev
+      TEST_DATABASE_URL: postgres://rifas:rifas@db:5432/rifas_test
+      JWT_SECRET: secreto-solo-para-desarrollo-local
+      UPLOADS_DIR: ./storage/comprobantes
+      WEB_ORIGIN: http://localhost:5173
+      ALLOW_REGISTRATION: "false"
+      CHOKIDAR_USEPOLLING: "true" # recarga fiable con carpetas montadas desde Windows/macOS
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app
+      - /app/node_modules # node_modules de la imagen, no los del host
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      target: dev
+    environment:
+      API_URL: http://api:3000
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  db-data:
