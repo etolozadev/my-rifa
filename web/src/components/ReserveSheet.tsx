@@ -95,7 +95,7 @@ export function ReserveSheet({ raffle, numbers, onClose, onDone, onConflict, sel
         </div>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
-          <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Reservando…' : 'Reservar'}</button>
+          <button type="submit" className="btn cta" disabled={busy}>{busy ? 'Reservando…' : 'Reservar'}</button>
         </div>
       </form>
     </div>

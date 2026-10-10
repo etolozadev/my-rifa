@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { SignOutIcon, TicketIcon } from '../components/icons';
 import { adminApi, type User } from '../lib/admin';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { LoginPage } from './LoginPage';
@@ -59,10 +60,16 @@ function Shell() {
     <>
       <header className="topbar">
         <div>
-          <Link to="/admin" className="brand">mis-rifas · Panel</Link>
+          <Link to="/admin" className="brand">
+            <TicketIcon size={24} weight="duotone" aria-hidden="true" />
+            mis-rifas
+          </Link>
           <div className="row">
             <span className="muted small">{user.nombre}</span>
-            <button type="button" className="btn small" onClick={logout}>Salir</button>
+            <button type="button" className="btn small" onClick={logout}>
+              <SignOutIcon size={16} aria-hidden="true" />
+              Salir
+            </button>
           </div>
         </div>
       </header>

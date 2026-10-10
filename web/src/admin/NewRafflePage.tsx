@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from '../components/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { adminApi } from '../lib/admin';
 import { EMPTY_RAFFLE, RaffleForm } from './RaffleForm';
@@ -6,7 +7,7 @@ export function NewRafflePage() {
   const navigate = useNavigate();
   return (
     <main className="page wide">
-      <Link to="/admin" className="small">← Mis rifas</Link>
+      <Link to="/admin" className="link-back"><ArrowLeftIcon size={16} aria-hidden="true" />Mis rifas</Link>
       <h1>Nueva rifa</h1>
       <p className="muted">Se crea como borrador: nadie la ve hasta que la actives.</p>
       <RaffleForm

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, type PublicDraw } from '../lib/api';
 import { shortDate } from '../lib/format';
 import { verifyDraw, type VerifyResult } from '../lib/verify';
+import { ShieldCheckIcon } from './icons';
 
 /** Ganadores publicados, con la forma de comprobar cada sorteo. Los anulados se muestran aparte con su motivo. */
 export function DrawResults({ slug, draws }: { slug: string; draws: PublicDraw[] }) {
@@ -74,7 +75,10 @@ function DrawProof({ slug, draw: d }: { slug: string; draw: PublicDraw }) {
       </p>
       <code className="url small">{d.semilla}</code>
       <div className="row">
-        <button type="button" className="btn small" onClick={verify} disabled={busy}>{busy ? 'Verificando…' : 'Verificar en mi navegador'}</button>
+        <button type="button" className="btn small" onClick={verify} disabled={busy}>
+          <ShieldCheckIcon size={18} aria-hidden="true" />
+          {busy ? 'Verificando…' : 'Verificar en mi navegador'}
+        </button>
       </div>
       {result && (
         <p className={`banner ${result.ok ? 'ok' : 'error'}`} role="status">

@@ -153,7 +153,7 @@ export function PrepaidPage() {
         </div>
         {touched && remaining > 0 && <div className="banner error" role="alert">Elige {plural(remaining, 'número más', 'números más')}.</div>}
         {formError && <div className="banner error" role="alert">{formError}</div>}
-        <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Guardando…' : 'Confirmar mis números'}</button>
+        <button type="submit" className="btn cta" disabled={busy}>{busy ? 'Guardando…' : 'Confirmar mis números'}</button>
       </form>
     </main>
   );

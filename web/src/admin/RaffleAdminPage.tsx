@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from '../components/icons';
 import { useState } from 'react';
 import { Link, NavLink, useParams } from 'react-router-dom';
 import { ApiError } from '../lib/api';
@@ -52,7 +53,7 @@ export function RaffleAdminPage() {
 
   return (
     <main className="page wide">
-      <Link to="/admin" className="small">← Mis rifas</Link>
+      <Link to="/admin" className="link-back"><ArrowLeftIcon size={16} aria-hidden="true" />Mis rifas</Link>
       <header className="stack">
         <div className="row between">
           <h1>{raffle.nombre}</h1>

@@ -27,4 +27,7 @@ export function timeLeft(iso: string, now = Date.now()): string {
   return `faltan ${days} días`;
 }
 
-export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** Cifra de numerador como en el talonario impreso: 7 de 300 → "007" */
+export const ticketNumber = (n: number, total: number) => String(n).padStart(String(total).length, '0');
+
+export const plural =(n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

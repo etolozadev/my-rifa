@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { BankData } from '../lib/api';
+import { CheckIcon, CopyIcon } from './icons';
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -19,6 +20,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   };
   return (
     <button type="button" className="btn small" onClick={copy} aria-label={`Copiar ${label}`}>
+      {done ? <CheckIcon size={16} weight="bold" aria-hidden="true" /> : <CopyIcon size={16} aria-hidden="true" />}
       {done ? 'Copiado' : 'Copiar'}
     </button>
   );

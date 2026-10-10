@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AdminRaffle, AdminTicket, TicketState } from '../lib/admin';
 import { adminApi } from '../lib/admin';
-import { shortDate } from '../lib/format';
+import { shortDate, ticketNumber } from '../lib/format';
 import { CHANNEL } from './labels';
 import { useAdminLoad } from './session';
 
@@ -129,7 +129,7 @@ export function NumbersTab({ raffle }: { raffle: AdminRaffle }) {
                 aria-pressed={selected === t.numero}
                 onClick={() => setSelected(t.numero)}
               >
-                {t.numero}
+                {ticketNumber(t.numero, raffle.cantidadTalonarios * raffle.numerosPorTalonario)}
               </button>
             ))}
           </div>

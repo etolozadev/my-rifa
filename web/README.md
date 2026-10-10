@@ -57,6 +57,22 @@ enlace y su rendición), Órdenes y Números (solo los datos de sus ventas), Car
 - Toda petición que cambia datos envía `X-Requested-With: mis-rifas` (protección CSRF de la API).
 - Los permisos los decide la API; el front solo oculta lo que el rol no puede usar (un editor no ve Configuración).
 
+## Sistema visual
+
+La idea es el **talonario de rifa en papel**:
+
+- La cabecera de la rifa (y la de la orden del comprador) es un **talón**: arriba la causa y el avance, y tras una
+  línea perforada con muescas, lo necesario para comprar (sorteo, precio, disponibles).
+- Cada número es un **boleto** con muescas laterales y cifras de numerador (`007`). Libre: blanco; elegido: petróleo con
+  check; reservado: rayado ámbar; vendido: papel gris con timbre circular. Los estados se distinguen por forma, no solo por color.
+- **Color** (variables en `src/styles.css`, con modo oscuro propio): papel `#F2F6F8`, tinta `#0F2A3D`, petróleo `#0B6178`
+  para acciones y selección, y naranja numerador `#C2410C` **solo** para la acción de compra (`.btn.cta`: Reservar,
+  Confirmar mis números). Todos los pares de texto cumplen WCAG AA (4,5:1) en claro y oscuro.
+- **Tipografía**: Plus Jakarta Sans variable, alojada con la app (`@fontsource-variable`), cifras tabulares en montos y números.
+- **Íconos**: Phosphor (`src/components/icons.ts`, importados uno a uno), siempre junto a un texto. Los avisos (`.banner`)
+  llevan ícono por CSS además del color.
+- Sin sombras repetidas: solo el talón, la barra de selección y la hoja de reserva se elevan; el resto son superficies planas.
+
 ## Decisiones
 
 - **Móvil primero**: casi todos abrirán el enlace desde WhatsApp. Botones de 46–48 px, barra fija con el total, hoja de reserva

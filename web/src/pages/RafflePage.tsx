@@ -71,34 +71,55 @@ export function RafflePage() {
   return (
     <>
       <main className="page">
-        <header className="card hero">
-          <div className="row">
-            <span className="chip">{PURPOSE[raffle.proposito]}</span>
-            {raffle.estado === 'cerrada' && <span className="chip warn">Venta cerrada</span>}
-            {raffle.estado === 'sorteada' && <span className="chip ok">Sorteo realizado</span>}
-          </div>
-          <h1>{raffle.nombre}</h1>
-          {raffle.objetivo && <p className="goal">{raffle.objetivo}</p>}
-
-          {raffle.metaMonto > 0 && (
-            <div className="stack">
-              <div className="row between">
-                <b>{money(raffle.avance.recaudado)} recaudados</b>
-                <span className="muted small">meta {money(raffle.metaMonto)}</span>
-              </div>
-              <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Avance hacia la meta">
-                <span style={{ width: `${pct}%` }} />
-              </div>
+        {/* Talón de rifa: arriba la causa, abajo (tras la perforación) lo que hay que saber para comprar */}
+        <header className="stub">
+          <div className="stub-main">
+            <div className="row">
+              <span className="chip">{PURPOSE[raffle.proposito]}</span>
+              {raffle.estado === 'cerrada' && <span className="chip warn">Venta cerrada</span>}
+              {raffle.estado === 'sorteada' && <span className="chip ok">Sorteo realizado</span>}
             </div>
-          )}
+            <h1>{raffle.nombre}</h1>
+            {raffle.objetivo && <p className="goal">{raffle.objetivo}</p>}
 
-          <div className="facts">
-            <div className="fact"><b>{dayLabel(raffle.fechaSorteo)}</b><span>Sorteo a las {timeLabel(raffle.fechaSorteo)} · {timeLeft(raffle.fechaSorteo)}</span></div>
-            <div className="fact"><b>{money(raffle.precioNumero)}</b><span>por número</span></div>
-            <div className="fact"><b>{money(raffle.precioTalonario)}</b><span>talonario de {raffle.numerosPorTalonario}</span></div>
-            <div className="fact"><b>{raffle.avance.disponibles}</b><span>{raffle.avance.disponibles === 1 ? 'número disponible' : 'números disponibles'}</span></div>
+            {raffle.metaMonto > 0 && (
+              <div className="stack">
+                <div className="raised">
+                  <b>{money(raffle.avance.recaudado)}</b>
+                  <span className="muted small">recaudados de {money(raffle.metaMonto)}</span>
+                </div>
+                <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Avance hacia la meta">
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )}
           </div>
-          {raffle.numeroAutorizacion && <p className="muted small">Autorización N° {raffle.numeroAutorizacion}</p>}
+          <div className="stub-tear" aria-hidden="true" />
+          <dl className="stub-facts">
+            <div>
+              <dt>Sorteo</dt>
+              <dd>{dayLabel(raffle.fechaSorteo)}</dd>
+              <dd className="sub">A las {timeLabel(raffle.fechaSorteo)}, {timeLeft(raffle.fechaSorteo)}</dd>
+            </div>
+            <div>
+              <dt>Cada número</dt>
+              <dd>{money(raffle.precioNumero)}</dd>
+            </div>
+            <div>
+              <dt>Talonario de {raffle.numerosPorTalonario}</dt>
+              <dd>{money(raffle.precioTalonario)}</dd>
+            </div>
+            <div>
+              <dt>Disponibles</dt>
+              <dd>{raffle.avance.disponibles}</dd>
+            </div>
+            {raffle.numeroAutorizacion && (
+              <div>
+                <dt>Autorización</dt>
+                <dd>N° {raffle.numeroAutorizacion}</dd>
+              </div>
+            )}
+          </dl>
         </header>
 
         {!open && raffle.estado === 'activa' && <div className="banner">La venta cerró porque ya llegó la fecha del sorteo.</div>}
@@ -123,7 +144,7 @@ export function RafflePage() {
         )}
 
         {raffle.premios.length > 0 && (
-          <section className="card" aria-labelledby="prizes-title">
+          <section className="section" aria-labelledby="prizes-title">
             <h2 id="prizes-title">Premios</h2>
             <ol className="prizes">
               {raffle.premios.map((p) => (
@@ -164,7 +185,7 @@ export function RafflePage() {
             </div>
             <div className="row">
               <button className="btn" onClick={() => setSelection(new Set())}>Limpiar</button>
-              <button className="btn primary" disabled={overLimit} onClick={() => setSheet(true)}>Reservar</button>
+              <button className="btn cta" disabled={overLimit} onClick={() => setSheet(true)}>Reservar</button>
             </div>
           </div>
         </div>

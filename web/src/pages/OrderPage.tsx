@@ -2,7 +2,7 @@ import { ChangeEvent, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BankCard } from '../components/BankCard';
 import { ApiError, api } from '../lib/api';
-import { longDate, money, plural, shortDate, timeLeft } from '../lib/format';
+import { longDate, money, shortDate, timeLeft } from '../lib/format';
 import { useLoad } from '../lib/useLoad';
 import { NotFoundPage } from './NotFoundPage';
 
@@ -69,11 +69,31 @@ export function OrderPage() {
 
   return (
     <main className="page">
-      <header className="card hero">
-        <div className="row"><span className={`chip ${st.cls}`}>{st.label}</span></div>
-        <h1>Tu reserva en {order.rifa.nombre}</h1>
-        {/* La fecha termina en "a. m." / "p. m.": sin punto final para no duplicarlo */}
-        <p className="muted">Hola {order.compradorNombre}. Sorteo: {longDate(order.rifa.fechaSorteo)}</p>
+      {/* La reserva es el boleto del comprador: mismo talón que la rifa, con sus números en la parte desprendible */}
+      <header className="stub">
+        <div className="stub-main">
+          <div className="row"><span className={`chip ${st.cls}`}>{st.label}</span></div>
+          <h1>Tu reserva en {order.rifa.nombre}</h1>
+          {/* La fecha termina en "a. m." / "p. m.": sin punto final para no duplicarlo */}
+          <p className="muted">Hola {order.compradorNombre}. Sorteo: {longDate(order.rifa.fechaSorteo)}</p>
+        </div>
+        <div className="stub-tear" aria-hidden="true" />
+        <dl className="stub-facts">
+          <div style={{ gridColumn: '1 / -1' }}>
+            <dt>{order.numeros.length === 1 ? 'Tu número' : `Tus ${order.numeros.length} números`}</dt>
+            <dd className="chips" aria-label="Números">
+              {order.numeros.map((n) => <span key={n} className="chip">{n}</span>)}
+            </dd>
+          </div>
+          <div>
+            <dt>Total</dt>
+            <dd>{money(order.monto)}</dd>
+          </div>
+          <div>
+            <dt>Rifa</dt>
+            <dd><Link to={`/r/${order.rifa.slug}`}>Ver la rifa</Link></dd>
+          </div>
+        </dl>
       </header>
 
       {order.estado === 'pendiente' && (
@@ -100,14 +120,6 @@ export function OrderPage() {
           Tu reserva venció y los números se liberaron. Si ya transferiste, avísale al organizador: puede reactivarla si los números siguen libres.
         </div>
       )}
-
-      <section className="card" aria-labelledby="nums-title">
-        <h2 id="nums-title">{plural(order.numeros.length, 'número', 'números')} · {money(order.monto)}</h2>
-        <div className="chips">
-          {order.numeros.map((n) => <span key={n} className="chip">{n}</span>)}
-        </div>
-        <Link className="btn small" style={{ justifySelf: 'start' }} to={`/r/${order.rifa.slug}`}>Ver la rifa</Link>
-      </section>
 
       {order.datosBancarios && <BankCard bank={order.datosBancarios} note={`Transfiere exactamente ${money(order.monto)}.`} />}
 

@@ -1,5 +1,5 @@
 import type { PublicRaffle } from '../lib/api';
-import { money } from '../lib/format';
+import { money, ticketNumber } from '../lib/format';
 import { bookletIsFree, bookletNumbers } from '../lib/selection';
 
 interface Props {
@@ -16,6 +16,7 @@ const LABEL = { disponible: 'disponible', reservado: 'reservado', pagado: 'vendi
 export function NumberGrid({ raffle, selection, onToggle, onToggleBooklet, readOnly }: Props) {
   const stateOf = new Map(raffle.numeros.map((x) => [x.n, x.e]));
   const per = raffle.numerosPorTalonario;
+  const total = raffle.cantidadTalonarios * per;
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -63,7 +64,7 @@ export function NumberGrid({ raffle, selection, onToggle, onToggleBooklet, readO
                     aria-label={`Número ${n}, ${selected ? 'seleccionado' : LABEL[e]}`}
                     onClick={() => onToggle(n)}
                   >
-                    {n}
+                    {ticketNumber(n, total)}
                   </button>
                 );
               })}
@@ -74,7 +75,7 @@ export function NumberGrid({ raffle, selection, onToggle, onToggleBooklet, readO
       <div className="legend" aria-label="Leyenda">
         <span><i /> Disponible</span>
         <span><i className="s" /> Tu selección</span>
-        <span><i className="r" /> Reservado (pendiente de pago)</span>
+        <span><i className="r" /> Reservado (espera de pago)</span>
         <span><i className="p" /> Vendido</span>
       </div>
     </div>
