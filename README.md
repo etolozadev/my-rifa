@@ -51,6 +51,9 @@ cd web && npm install && npm run dev
 
 ## Producción con Docker
 
+**Para instalar en el servidor, sigue [`deploy/README.md`](deploy/README.md)**: scripts probados para instalar, importar
+datos, publicar en Nginx con HTTPS, actualizar y respaldar. Lo que sigue explica cómo está armado.
+
 `docker-compose.prod.yml` levanta tres contenedores:
 
 - `db`: PostgreSQL 16 sin puerto publicado, datos en el volumen `db-data`.

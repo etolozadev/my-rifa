@@ -1,1 +1,3 @@
 .env
+# Datos reales para migrar a producción (compradores, comprobantes): nunca al repositorio
+migracion-produccion/

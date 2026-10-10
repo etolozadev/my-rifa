@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:init": "tsx scripts/db-init.ts",
     "user:create": "tsx scripts/create-user.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "user:password": "tsx scripts/set-password.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
