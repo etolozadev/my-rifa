@@ -13,7 +13,7 @@ export const PASSWORD = 'contraseña-de-prueba-123';
 export async function resetDb() {
   await sequelize.query(readFileSync(join(__dirname, '../db/schema.sql'), 'utf8'));
   await sequelize.query(
-    `TRUNCATE users, raffles, raffle_members, booklets, tickets, sellers, orders, payment_proofs, prizes, draws, share_links, invitations, audit_log RESTART IDENTITY CASCADE`,
+    `TRUNCATE users, raffles, raffle_members, booklets, tickets, sellers, orders, payment_proofs, prizes, draws, share_links, invitations, contacts, audit_log RESTART IDENTITY CASCADE`,
   );
 }
 

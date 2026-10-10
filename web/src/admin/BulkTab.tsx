@@ -2,9 +2,12 @@ import { ChangeEvent, useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, parseBulk, type AdminRaffle, type BulkResult } from '../lib/admin';
 import { money, plural } from '../lib/format';
+import { ContactPicker, NO_CONTACT, contactChoiceError, resolveContact, type ContactChoice } from './ContactPicker';
 import { useAdminLoad } from './session';
 
-const EXAMPLE = '1-5; Juan Pérez; +56 9 1234 5678\n12, 14; María Soto; 987654321; no';
+const EXAMPLE = '1-5; Juan Pérez; +56 9 1234 5678\n12, 14; María Soto; 987654321; no\n20; Abuela Marta; ; sí; Rosa Pérez';
+/** Id provisional del contacto nuevo del lote: se reemplaza por el real al crearlo, justo antes de cargar */
+const NEW_CONTACT_ID = -1;
 
 /** Carga rápida de ventas físicas: una por línea, pegadas o importadas desde un CSV (Excel). */
 export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged: () => void }) {
@@ -21,7 +24,22 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
   // Solo el equipo elige a quién atribuir el lote; el vendedor carga a su nombre
   const sellers = useAdminLoad(() => (isSeller ? Promise.resolve([]) : adminApi.sellers(raffle.id)), 300_000).data ?? [];
 
-  const rows = useMemo(() => parseBulk(text, total, pagada), [text, total, pagada]);
+  // Personas de contacto (solo organizador y editores): una para todo el lote y/o una por fila (5ª columna)
+  const contactsLoad = useAdminLoad(() => (isSeller ? Promise.resolve([]) : adminApi.contacts(raffle.id)), 300_000);
+  const contacts = useMemo(() => contactsLoad.data ?? [], [contactsLoad.data]);
+  const contactsReload = contactsLoad.reload;
+  const [lotContact, setLotContact] = useState<ContactChoice>(NO_CONTACT);
+  const [lotVendio, setLotVendio] = useState(false);
+  const lotContactId = lotContact.mode === 'existing' ? lotContact.id : lotContact.mode === 'new' ? NEW_CONTACT_ID : null;
+  const contactName = (id: number) =>
+    id === NEW_CONTACT_ID && lotContact.mode === 'new'
+      ? `${lotContact.nombre || 'Contacto nuevo'} (nuevo)`
+      : contacts.find((c) => c.id === id)?.nombre ?? '?';
+
+  const rows = useMemo(
+    () => parseBulk(text, total, pagada, { contactos: contacts, contactoPorDefecto: lotContactId, contactoVendio: lotVendio }),
+    [text, total, pagada, contacts, lotContactId, lotVendio],
+  );
   const valid = rows.filter((r) => r.venta);
   const invalid = rows.filter((r) => r.error);
   const count = valid.reduce((n, r) => n + r.venta!.numeros.length, 0);
@@ -42,7 +60,24 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
     setResult(null);
     try {
       const vendedorId = sellerId ? Number(sellerId) : undefined;
-      const r: BulkResult = await adminApi.bulkSales(raffle.id, valid.map((x) => ({ ...x.venta!, ...(vendedorId ? { vendedorId } : {}) })), canal);
+      const pickerErr = contactChoiceError(lotContact);
+      if (pickerErr) {
+        setError(pickerErr);
+        return;
+      }
+      // El contacto nuevo del lote se crea una vez y reemplaza el id provisional en las filas que lo usan
+      const realLotId = lotContact.mode === 'new' ? await resolveContact(raffle.id, lotContact) : null;
+      const ventas = valid.map(({ venta }) => ({
+        ...venta!,
+        ...(venta!.contactoId === NEW_CONTACT_ID ? { contactoId: realLotId! } : {}),
+        ...(vendedorId ? { vendedorId } : {}),
+      }));
+      const r: BulkResult = await adminApi.bulkSales(raffle.id, ventas, canal);
+      if (realLotId) {
+        // A partir de aquí el contacto ya existe: queda elegido como existente
+        setLotContact({ mode: 'existing', id: realLotId });
+        await contactsReload();
+      }
       const failed = r.resultados.filter((x) => !x.ok);
       const lines = text.split(/\r?\n/);
       const lineOf = (fila: number) => lines[valid[fila - 1].linea - 1].trim();
@@ -68,8 +103,15 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
       <section className="card" aria-labelledby="bulk-title">
         <h2 id="bulk-title">Carga rápida de ventas</h2>
         <p className="muted small">
-          Una venta por línea: <b>números; nombre; contacto</b>. Los números aceptan rangos (<code>10-15</code>). Una 4ª columna opcional
-          (<code>sí</code>/<code>no</code>) indica si esa venta ya está pagada. También puedes importar un CSV de Excel con esas columnas.
+          Una venta por línea: <b>números; nombre; teléfono</b>. Los números aceptan rangos (<code>10-15</code>). Una 4ª columna opcional
+          (<code>sí</code>/<code>no</code>) indica si esa venta ya está pagada.
+          {!isSeller && (
+            <>
+              {' '}El teléfono puede quedar vacío si la venta tiene persona de contacto: elige una para todo el lote o escribe su nombre
+              o teléfono en una 5ª columna.
+            </>
+          )}{' '}
+          También puedes importar un CSV de Excel con esas columnas.
         </p>
         <div className="field">
           <label htmlFor="bulk-text">Ventas</label>
@@ -104,6 +146,19 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
           <input type="checkbox" checked={pagada} onChange={(e) => setPagada(e.target.checked)} />
           Marcar como pagadas (salvo las que digan "no")
         </label>
+        {!isSeller && (
+          <ContactPicker
+            id="bulk-contacto"
+            label="Persona de contacto para todo el lote"
+            contacts={contacts}
+            value={lotContact}
+            onChange={setLotContact}
+            vendio={lotVendio}
+            onVendio={setLotVendio}
+            showErrors
+            hint="Se usa en las filas que no indican otra en la 5ª columna."
+          />
+        )}
         {isSeller && <p className="muted small">Las ventas quedan a tu nombre. Solo puedes usar números de tu talonario o libres.</p>}
       </section>
 
@@ -122,7 +177,7 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>Línea</th><th>Números</th><th>Comprador</th><th>Contacto</th><th>Estado</th></tr>
+                <tr><th>Línea</th><th>Números</th><th>Comprador</th><th>Teléfono</th><th>Persona de contacto</th><th>Estado</th></tr>
               </thead>
               <tbody>
                 {valid.map(({ linea, venta }) => (
@@ -130,7 +185,10 @@ export function BulkTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
                     <td>{linea}</td>
                     <td>{venta!.numeros.join(', ')}</td>
                     <td>{venta!.compradorNombre}</td>
-                    <td>{venta!.compradorContacto}</td>
+                    <td>{venta!.compradorContacto ?? '—'}</td>
+                    <td>
+                      {venta!.contactoId ? `${contactName(venta!.contactoId)}${venta!.contactoVendio ? ' (vendió)' : ''}` : '—'}
+                    </td>
                     <td>{venta!.pagada ? 'Pagada' : 'Pendiente'}</td>
                   </tr>
                 ))}

@@ -46,7 +46,8 @@ export const Ticket = define('Ticket', 'tickets', {
 
 export const Order = define('Order', 'orders', {
   id, raffleId: int(), token: text(), tipo: text(), canal: text(),
-  compradorNombre: text(), compradorContacto: text(), sellerId: int(true),
+  compradorNombre: text(), compradorContacto: text(true), sellerId: int(true),
+  contactId: int(true), contactoVendio: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   numeros: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: false },
   monto: int(), estado: text(), creadaEn: ts(false), venceEn: ts(false),
   pagadaEn: ts(), confirmadaPor: int(true), shareLinkId: int(true),
@@ -70,6 +71,10 @@ export const ShareLink = define('ShareLink', 'share_links', {
 export const Invitation = define('Invitation', 'invitations', {
   id, raffleId: int(), token: text(), rol: text(), creadoPor: int(true), creadoEn: ts(false), venceEn: ts(false),
   usadaPor: int(true), usadaEn: ts(), revocadaEn: ts(),
+});
+
+export const Contact = define('Contact', 'contacts', {
+  id, raffleId: int(), nombre: text(), telefono: text(), nota: text(), creadoPor: int(true), creadoEn: ts(false),
 });
 
 export const Draw = define('Draw', 'draws', {

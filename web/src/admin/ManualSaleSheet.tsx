@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, parseNumberList, type AdminRaffle } from '../lib/admin';
 import { money, plural } from '../lib/format';
+import { ContactPicker, NO_CONTACT, contactChoiceError, resolveContact, type ContactChoice } from './ContactPicker';
 import { useAdminLoad } from './session';
 
 interface Props {
@@ -24,6 +25,10 @@ export function ManualSaleSheet({ raffle, onClose, onDone }: Props) {
   const [sellerId, setSellerId] = useState('');
   const sellers = useAdminLoad(() => (isSeller ? Promise.resolve([]) : adminApi.sellers(raffle.id)), 300_000).data ?? [];
   const activeSellers = sellers.filter((s) => s.activo);
+  // Personas de contacto: solo el organizador y los editores (un vendedor registra el teléfono del comprador)
+  const contacts = useAdminLoad(() => (isSeller ? Promise.resolve([]) : adminApi.contacts(raffle.id)), 300_000).data ?? [];
+  const [contactChoice, setContactChoice] = useState<ContactChoice>(NO_CONTACT);
+  const [contactoVendio, setContactoVendio] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,20 +46,32 @@ export function ManualSaleSheet({ raffle, onClose, onDone }: Props) {
   const bookletErr = tipo === 'talonario' && (!Number.isInteger(k) || k < 1 || k > raffle.cantidadTalonarios) ? `Del 1 al ${raffle.cantidadTalonarios}` : null;
   const numbersErr = typeof parsed === 'string' ? parsed : null;
   const nameErr = nombre.trim().length < 2 ? 'Escribe el nombre' : null;
-  const contactErr = contacto.trim().length < 6 ? 'Mínimo 6 caracteres' : null;
+  const phone = contacto.trim();
+  // Al menos una forma de ubicar al comprador: su teléfono o una persona de contacto
+  const contactErr =
+    phone && phone.length < 6
+      ? 'Mínimo 6 caracteres'
+      : !phone && contactChoice.mode === 'none'
+        ? isSeller
+          ? 'Escribe el teléfono del comprador'
+          : 'Escribe el teléfono o elige una persona de contacto'
+        : null;
+  const pickerErr = contactChoiceError(contactChoice);
   const count = tipo === 'talonario' ? raffle.numerosPorTalonario : Array.isArray(parsed) ? parsed.length : 0;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTouched(true);
-    if (numbersErr || bookletErr || nameErr || contactErr) return;
+    if (numbersErr || bookletErr || nameErr || contactErr || pickerErr) return;
     setBusy(true);
     setError(null);
     try {
+      const contactoId = await resolveContact(raffle.id, contactChoice);
       const res = await adminApi.manualSale(raffle.id, {
         ...(tipo === 'talonario' ? { tipo, talonario: k } : { tipo, numeros: parsed as number[] }),
         compradorNombre: nombre.trim(),
-        compradorContacto: contacto.trim(),
+        ...(phone ? { compradorContacto: phone } : {}),
+        ...(contactoId ? { contactoId, contactoVendio } : {}),
         canal,
         pagada,
         ...(sellerId ? { vendedorId: Number(sellerId) } : {}),
@@ -104,10 +121,24 @@ export function ManualSaleSheet({ raffle, onClose, onDone }: Props) {
           {touched && nameErr && <span className="err">{nameErr}</span>}
         </div>
         <div className="field">
-          <label htmlFor="s-contacto">Teléfono o contacto</label>
+          <label htmlFor="s-contacto">Teléfono del comprador</label>
           <input id="s-contacto" type="tel" value={contacto} onChange={(e) => setContacto(e.target.value)} aria-invalid={touched && !!contactErr} />
+          {!isSeller && <span className="hint">Opcional si eliges una persona de contacto.</span>}
           {touched && contactErr && <span className="err">{contactErr}</span>}
         </div>
+        {!isSeller && (
+          <ContactPicker
+            id="s-persona"
+            label="Persona de contacto"
+            contacts={contacts}
+            value={contactChoice}
+            onChange={setContactChoice}
+            vendio={contactoVendio}
+            onVendio={setContactoVendio}
+            showErrors={touched}
+            hint="A quién llamar por esta venta (por ejemplo, quien compró para un familiar)."
+          />
+        )}
         <div className="field">
           <label htmlFor="s-canal">Canal</label>
           <select id="s-canal" value={canal} onChange={(e) => setCanal(e.target.value as 'fisica' | 'manual')}>

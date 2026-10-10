@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, type AdminOrder, type AdminRaffle } from '../lib/admin';
 import { money, plural, shortDate, timeLeft } from '../lib/format';
-import { orderMessage, whatsappLink } from '../lib/messages';
+import { orderMessage, orderRecipient } from '../lib/messages';
 import { CHANNEL, ORDER_STATE } from './labels';
 import { ManualSaleSheet } from './ManualSaleSheet';
 import { NotifyButton } from './NotifyButton';
+import { ContactLine, Phone } from './Phone';
 import { useAdminLoad } from './session';
 
 type Filter = 'revisar' | 'pendiente' | 'porVencer' | 'pagada' | 'vencida' | 'cancelada' | 'todas';
@@ -43,7 +44,9 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
         (!q ||
           o.compradorNombre.toLowerCase().includes(q) ||
           (o.vendedorNombre ?? '').toLowerCase().includes(q) ||
-          o.compradorContacto.toLowerCase().includes(q) ||
+          (o.compradorContacto ?? '').toLowerCase().includes(q) ||
+          (o.contacto?.nombre ?? '').toLowerCase().includes(q) ||
+          (o.contacto?.telefono ?? '').toLowerCase().includes(q) ||
           (Number.isInteger(n) && (o.numeros.includes(n) || o.id === n))),
     );
   }, [orders, filter, query]);
@@ -103,11 +106,11 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
 
 function OrderCard({ order: o, raffle, onChanged }: { order: AdminOrder; raffle: AdminRaffle; onChanged: () => Promise<void> }) {
   const message = orderMessage(o, raffle);
+  const to = orderRecipient(o);
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const st = ORDER_STATE[o.estado];
-  const wa = whatsappLink(o.compradorContacto);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -136,12 +139,13 @@ function OrderCard({ order: o, raffle, onChanged }: { order: AdminOrder; raffle:
         <span className={`chip ${st.cls}`}>{st.label}</span>
       </div>
       <p className="small">
-        {wa ? <a href={wa} target="_blank" rel="noreferrer">{o.compradorContacto}</a> : o.compradorContacto}
+        {o.compradorContacto ? <Phone value={o.compradorContacto} /> : <span className="muted">Sin teléfono propio</span>}
         <span className="muted">
           {' '}· {o.shareLinkId ? 'Enlace de pago previo' : CHANNEL[o.canal]} · {shortDate(o.creadaEn)}
           {o.vendedorNombre && ` · vendedor: ${o.vendedorNombre}`}
         </span>
       </p>
+      {o.contacto && <p className="small"><ContactLine nombre={o.contacto.nombre} telefono={o.contacto.telefono} vendio={o.contactoVendio} /></p>}
       <div className="chips" aria-label="Números">
         {o.numeros.map((n) => <span key={n} className="chip">{n}</span>)}
       </div>
@@ -169,7 +173,13 @@ function OrderCard({ order: o, raffle, onChanged }: { order: AdminOrder; raffle:
 
       {o.estado !== 'cancelada' && (
         <div className="row">
-          {message && <NotifyButton contact={o.compradorContacto} text={message} label={o.estado === 'pendiente' ? 'Recordar pago' : 'Avisar por WhatsApp'} />}
+          {message && to && (
+            <NotifyButton
+              contact={to.telefono}
+              text={message}
+              label={`${o.estado === 'pendiente' ? 'Recordar pago' : 'Avisar por WhatsApp'}${to.esContacto ? ` a ${to.nombre.split(' ')[0]}` : ''}`}
+            />
+          )}
           {(o.estado === 'pendiente' || o.estado === 'vencida') && (
             <button className="btn small primary" disabled={busy} onClick={() => run(() => adminApi.confirmOrder(o.id))}>
               Confirmar pago

@@ -259,8 +259,16 @@ fieldset.card legend { font-weight: 750; font-size: 1.1rem; padding: 0 4px; floa
 .topbar > div { max-width: 980px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .topbar .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
 .topbar .brand svg { color: var(--primary); }
-.tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
-.tabs a { padding: 12px 14px; text-decoration: none; color: var(--ink-2); font-weight: 650; border-bottom: 3px solid transparent; white-space: nowrap; }
+/* Pestañas: si no caben se desplazan (dedo, rueda, teclado o flechas); nada queda oculto sin forma de llegar */
+.tabbar { position: relative; border-bottom: 1px solid var(--line); min-width: 0; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent; scroll-padding-inline: 44px; }
+.tabs::-webkit-scrollbar { height: 4px; }
+.tabs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.tab-arrow { position: absolute; top: 0; bottom: 4px; z-index: 1; width: 44px; display: grid; place-items: center; border: 0; padding: 0; cursor: pointer; color: var(--ink); }
+.tab-arrow.left { left: 0; justify-content: start; padding-left: 4px; background: linear-gradient(to right, var(--paper) 55%, transparent); }
+.tab-arrow.right { right: 0; justify-content: end; padding-right: 4px; background: linear-gradient(to left, var(--paper) 55%, transparent); }
+.tab-arrow:hover { color: var(--primary); }
+.tabs a { flex: none; padding: 12px 12px; text-decoration: none; color: var(--ink-2); font-weight: 650; border-bottom: 3px solid transparent; white-space: nowrap; }
 .tabs a:hover { color: var(--ink); }
 .tabs a.active { color: var(--primary-strong); border-bottom-color: var(--primary); }
 @media (prefers-color-scheme: dark) { .tabs a.active { color: var(--primary); } }
@@ -303,7 +311,6 @@ fieldset.card legend { font-weight: 750; font-size: 1.1rem; padding: 0 4px; floa
   color: var(--on-primary);
 }
 .winner.big { font-size: 1.6rem; padding: 8px 20px; }
-.drum { font-size: 2.6rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; padding: 18px; border-radius: var(--r-card); background: var(--primary-tint); color: var(--primary-strong); letter-spacing: 0.04em; }
 .proof { display: grid; gap: 8px; }
 .proof[open] { padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); }
 details summary { cursor: pointer; color: var(--primary-strong); font-weight: 650; }
@@ -311,3 +318,47 @@ details summary { cursor: pointer; color: var(--primary-strong); font-weight: 65
 .winner-banner { font-size: 1.05rem; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- Personas de contacto ---- */
+.contact-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ---- Escenario del sorteo en vivo (pantalla completa) ----
+   Colores propios (no cambian con el tema): siempre es un escenario oscuro con el boleto claro al centro. */
+.stage {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background: radial-gradient(circle at 50% 38%, rgba(10, 74, 92, 0.96), rgba(4, 12, 17, 0.985) 70%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #f2f6f8;
+}
+.stage-panel { width: min(680px, 100%); display: grid; gap: 18px; justify-items: center; text-align: center; }
+.stage-prize { font-weight: 650; font-size: 1.05rem; color: #cfe3ea; }
+.stage-title { color: #ffffff; font-size: clamp(1.6rem, 1.15rem + 2.2vw, 2.5rem); display: inline-flex; align-items: center; gap: 10px; }
+.stage-ticket {
+  --notch: #071a22;
+  min-width: 3.2ch; padding: 0.12em 0.45em; border-radius: 14px; line-height: 1.1;
+  font-size: clamp(4.2rem, 2rem + 16vw, 10rem); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  color: #0f2a3d;
+  background:
+    radial-gradient(circle at 0 50%, var(--notch) 0.16em, transparent 0.17em),
+    radial-gradient(circle at 100% 50%, var(--notch) 0.16em, transparent 0.17em),
+    #ffffff;
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+}
+.stage.is-rolling .stage-ticket { animation: stage-jitter 0.14s linear infinite; }
+.stage.is-reveal .stage-ticket {
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 0 50%, var(--notch) 0.16em, transparent 0.17em),
+    radial-gradient(circle at 100% 50%, var(--notch) 0.16em, transparent 0.17em),
+    #c2410c;
+  animation: stage-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both, stage-glow 1.6s ease-out 0.2s 2;
+}
+.stage-winner { font-size: clamp(1.3rem, 1rem + 1.5vw, 2rem); font-weight: 750; color: #ffffff; animation: stage-rise 0.5s ease-out 0.35s both; }
+.stage-actions { justify-content: center; }
+@keyframes stage-jitter { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes stage-pop { 0% { transform: scale(0.6); } 100% { transform: scale(1); } }
+@keyframes stage-glow { 0% { box-shadow: 0 0 0 0 rgba(251, 138, 91, 0.7), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } 100% { box-shadow: 0 0 0 40px rgba(251, 138, 91, 0), 0 24px 60px -24px rgba(0, 0, 0, 0.8); } }
+@keyframes stage-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+@media (prefers-reduced-motion: reduce) { .stage-ticket, .stage-winner { animation: none !important; } }

@@ -3,6 +3,7 @@ import type { AdminRaffle, AdminTicket, TicketState } from '../lib/admin';
 import { adminApi } from '../lib/admin';
 import { shortDate, ticketNumber } from '../lib/format';
 import { CHANNEL } from './labels';
+import { ContactLine, Phone } from './Phone';
 import { useAdminLoad } from './session';
 
 const STATES: { key: TicketState | 'todos'; label: string }[] = [
@@ -19,7 +20,7 @@ export function ticketsCsv(rows: AdminTicket[]): string {
     const s = v === null || v === undefined ? '' : String(v);
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = ['Número', 'Talonario', 'Estado', 'Orden', 'Comprador', 'Contacto', 'Fecha', 'Canal', 'Vendedor asignado'];
+  const head = ['Número', 'Talonario', 'Estado', 'Orden', 'Comprador', 'Teléfono', 'Persona de contacto', 'Teléfono del contacto', 'Contacto vendió', 'Fecha', 'Canal', 'Vendedor asignado'];
   const lines = rows.map((t) =>
     [
       t.numero,
@@ -28,6 +29,9 @@ export function ticketsCsv(rows: AdminTicket[]): string {
       t.ordenId,
       t.compradorNombre,
       t.compradorContacto,
+      t.contactoNombre,
+      t.contactoTelefono,
+      t.contactoNombre ? (t.contactoVendio ? 'sí' : 'no') : '',
       t.fecha ? new Date(t.fecha).toLocaleString('es-CL') : '',
       t.canal ? CHANNEL[t.canal] : '',
       t.vendedorNombre,
@@ -97,7 +101,18 @@ export function NumbersTab({ raffle }: { raffle: AdminRaffle }) {
           </p>
           {detail.ordenId ? (
             <p className="small">
-              <b>{detail.compradorNombre}</b> · {detail.compradorContacto}
+              <b>{detail.compradorNombre}</b>
+              {detail.compradorContacto && (
+                <>
+                  {' '}· <Phone value={detail.compradorContacto} />
+                </>
+              )}
+              {detail.contactoNombre && detail.contactoTelefono && (
+                <>
+                  <br />
+                  <ContactLine nombre={detail.contactoNombre} telefono={detail.contactoTelefono} vendio={detail.contactoVendio} />
+                </>
+              )}
               <br />
               <span className="muted">Orden #{detail.ordenId} · {detail.canal ? CHANNEL[detail.canal] : ''} · {detail.fecha ? shortDate(detail.fecha) : ''}</span>
             </p>

@@ -13,7 +13,12 @@ export interface ReserveInput {
   numeros?: number[];
   talonario?: number;
   compradorNombre: string;
-  compradorContacto: string;
+  /** Teléfono del comprador. En ventas del equipo puede faltar si hay persona de contacto. */
+  compradorContacto: string | null;
+  /** Persona de contacto de la rifa (a quién llamar por esta venta) */
+  contactId?: number | null;
+  /** La persona de contacto vendió el número (cuenta en su rendición) */
+  contactoVendio?: boolean;
   canal?: 'web' | 'fisica' | 'manual';
   /** Solo para canal fisica/manual: la orden nace pagada */
   pagada?: boolean;
@@ -126,6 +131,8 @@ export async function reserve(raffle: any, input: ReserveInput, outer?: Transact
         canal,
         compradorNombre: input.compradorNombre,
         compradorContacto: input.compradorContacto,
+        contactId: input.contactId ?? null,
+        contactoVendio: input.contactoVendio ?? false,
         numeros,
         monto: numeros.length * raffle.precioNumero,
         estado: paid ? 'pagada' : 'pendiente',

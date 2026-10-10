@@ -1,6 +1,6 @@
 import { ticketsCsv } from '../src/admin/NumbersTab';
 import { whatsappLink } from '../src/lib/messages';
-import { parseBulk, parseNumberList } from '../src/lib/admin';
+import { findContactRef, parseBulk, parseNumberList } from '../src/lib/admin';
 import { describe, expect, it } from 'vitest';
 import { money, plural, timeLeft } from '../src/lib/format';
 import { bookletIsFree, bookletNumbers, exactBooklet, pruneSelection, toggleNumber } from '../src/lib/selection';
@@ -85,21 +85,24 @@ describe('panel: utilidades', () => {
     expect(whatsappLink('ana@correo.cl')).toBeNull();
   });
 
-  it('ticketsCsv usa ; y escapa comillas y separadores', () => {
+  it('ticketsCsv usa ; y escapa comillas y separadores, con la persona de contacto', () => {
+    const base = { fecha: null, vendedorId: null, vendedorNombre: null, contactoNombre: null, contactoTelefono: null, contactoVendio: false };
     const csv = ticketsCsv([
-      { numero: 1, talonario: 1, estado: 'pagado', ordenId: 3, compradorNombre: 'Soto; "Juan"', compradorContacto: '+569', fecha: null, canal: 'fisica', vendedorId: 2, vendedorNombre: 'Vale' },
-      { numero: 2, talonario: 1, estado: 'disponible', ordenId: null, compradorNombre: null, compradorContacto: null, fecha: null, canal: null, vendedorId: null, vendedorNombre: null },
+      { ...base, numero: 1, talonario: 1, estado: 'pagado', ordenId: 3, compradorNombre: 'Soto; "Juan"', compradorContacto: '+569', canal: 'fisica', vendedorId: 2, vendedorNombre: 'Vale' },
+      { ...base, numero: 2, talonario: 1, estado: 'pagado', ordenId: 4, compradorNombre: 'Marta', compradorContacto: null, canal: 'fisica', contactoNombre: 'Rosa', contactoTelefono: '912345678', contactoVendio: true },
+      { ...base, numero: 3, talonario: 1, estado: 'disponible', ordenId: null, compradorNombre: null, compradorContacto: null, canal: null },
     ]);
     expect(csv.startsWith('﻿')).toBe(true);
     const lines = csv.slice(1).split('\r\n');
-    expect(lines[0]).toBe('Número;Talonario;Estado;Orden;Comprador;Contacto;Fecha;Canal;Vendedor asignado');
-    expect(lines[1]).toBe('1;1;vendido;3;"Soto; ""Juan""";+569;;Talonario físico;Vale');
-    expect(lines[2]).toBe('2;1;disponible;;;;;;');
+    expect(lines[0]).toBe('Número;Talonario;Estado;Orden;Comprador;Teléfono;Persona de contacto;Teléfono del contacto;Contacto vendió;Fecha;Canal;Vendedor asignado');
+    expect(lines[1]).toBe('1;1;vendido;3;"Soto; ""Juan""";+569;;;;;Talonario físico;Vale');
+    expect(lines[2]).toBe('2;1;vendido;4;Marta;;Rosa;912345678;sí;;Talonario físico;');
+    expect(lines[3]).toBe('3;1;disponible;;;;;;;;;');
   });
 
-  it('parseBulk lee "números; nombre; contacto[; pagada]", con encabezado, comillas y tabuladores', () => {
+  it('parseBulk lee "números; nombre; teléfono[; pagada]", con encabezado, comillas y tabuladores', () => {
     const text = [
-      '﻿Números;Nombre;Contacto;Pagada',
+      '﻿Números;Nombre;Teléfono;Pagada',
       '1-3; Juan Pérez; +56 9 1234 5678',
       '"4, 7";"Soto; María";987654321;no',
       '',
@@ -107,14 +110,39 @@ describe('panel: utilidades', () => {
       '10; Pedro',
       '50; Luis; 912345678',
       '11; Rosa; 912345678; quizás',
+      '12; Lalo; 123',
+      '13',
     ].join('\r\n');
     const rows = parseBulk(text, 20, true);
     expect(rows[0]).toEqual({ linea: 2, venta: { numeros: [1, 2, 3], compradorNombre: 'Juan Pérez', compradorContacto: '+56 9 1234 5678', pagada: true } });
     expect(rows[1].venta).toEqual({ numeros: [4, 7], compradorNombre: 'Soto; María', compradorContacto: '987654321', pagada: false });
     expect(rows[2]).toMatchObject({ linea: 5, venta: { numeros: [9], compradorNombre: 'Ana', pagada: true } });
-    expect(rows[3]).toEqual({ linea: 6, error: 'Faltan columnas: números; nombre; contacto' });
+    expect(rows[3]).toEqual({ linea: 6, error: 'Falta el teléfono o la persona de contacto' });
     expect(rows[4]).toMatchObject({ linea: 7, error: expect.stringMatching(/del 1 al 20/) });
     expect(rows[5]).toMatchObject({ linea: 8, error: expect.stringMatching(/no es sí\/no/) });
+    expect(rows[6]).toEqual({ linea: 9, error: 'El teléfono debe tener al menos 6 caracteres' });
+    expect(rows[7]).toEqual({ linea: 10, error: 'Faltan columnas: números; nombre; teléfono' });
     expect(parseBulk('5; Ana; 912345678', 20, false)[0].venta?.pagada).toBe(false);
+  });
+
+  it('parseBulk acepta persona de contacto: del lote o por fila (nombre sin tildes ni mayúsculas, o teléfono)', () => {
+    const contactos = [
+      { id: 7, nombre: 'Rosa Pérez', telefono: '+56 9 1111 2222' },
+      { id: 8, nombre: 'Luis Soto', telefono: '987654321' },
+    ];
+    const text = ['1; Doña Marta', '2; Don Juan; ; sí; rosa perez', '3; Tía Luz; ; no; 9 8765 4321', '4; Primo; 912345678', '5; Nadie; ; ; Pedro'].join('\n');
+
+    const sinLote = parseBulk(text, 20, true, { contactos });
+    expect(sinLote[0]).toEqual({ linea: 1, error: 'Falta el teléfono o la persona de contacto' });
+    expect(sinLote[1].venta).toEqual({ numeros: [2], compradorNombre: 'Don Juan', contactoId: 7, contactoVendio: false, pagada: true });
+    expect(sinLote[2].venta).toMatchObject({ contactoId: 8, pagada: false });
+    expect(sinLote[3].venta).toEqual({ numeros: [4], compradorNombre: 'Primo', compradorContacto: '912345678', pagada: true });
+    expect(sinLote[4]).toEqual({ linea: 5, error: 'No hay una persona de contacto "Pedro" en la rifa' });
+
+    const conLote = parseBulk(text, 20, true, { contactos, contactoPorDefecto: 8, contactoVendio: true });
+    expect(conLote[0].venta).toEqual({ numeros: [1], compradorNombre: 'Doña Marta', contactoId: 8, contactoVendio: true, pagada: true });
+    // La 5ª columna gana sobre el contacto del lote
+    expect(conLote[1].venta).toMatchObject({ contactoId: 7, contactoVendio: true });
+    expect(findContactRef(contactos, '56911112222')?.id).toBe(7);
   });
 });

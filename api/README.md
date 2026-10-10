@@ -23,7 +23,7 @@ Las cuentas se crean por script porque es una plataforma personal (`ALLOW_REGIST
 
 ```bash
 createdb rifas_test             # una vez; usa TEST_DATABASE_URL si tu base es otra (en Docker ya existe)
-npm test                        # 60 tests de integración contra PostgreSQL real (fases 1, 2 y 3)
+npm test                        # 71 tests de integración contra PostgreSQL real (fases 1, 2, 3 y contactos)
 npm run typecheck
 ```
 
@@ -92,6 +92,20 @@ Errores: `{ "error": { "code", "message", "details" } }`.
   aunque `ALLOW_REGISTRATION=false` (la invitación es la autorización). Si el correo ya tiene cuenta, se pide iniciar sesión.
 - El esquema de la fase 2 se agrega al final de `db/schema.sql` con `ADD COLUMN IF NOT EXISTS` y `CREATE TABLE IF NOT
   EXISTS`, así se aplica sin pasos manuales sobre una base de la fase 1.
+
+## Personas de contacto
+
+Endpoints (organizador y editores): `GET|POST /api/admin/rifas/:id/contactos` · `PATCH|DELETE /api/admin/rifas/:id/contactos/:contactId`.
+`POST /rifas/:id/ordenes-manuales` y `/ventas-lote` aceptan `contactoId` y `contactoVendio`.
+
+- En las ventas que registra el equipo el teléfono del comprador es opcional si hay persona de contacto: **al menos uno de
+  los dos** (lo exige la API y también la base, con `orders_contacto_check`). La reserva pública sigue pidiendo teléfono.
+- Contactos por rifa (`contacts`), sin repetir teléfono en la misma rifa (se comparan solo los dígitos). Un contacto con
+  órdenes no se elimina (`ON DELETE RESTRICT`).
+- `contacto_vendio` marca que esa persona vendió el número: su rendición (vendidos, reservados, montos) sale de esas órdenes.
+- Los vendedores no usan contactos (registran el teléfono del comprador) y solo ven los datos de contacto de sus ventas.
+- Los avisos de WhatsApp del panel (recordatorio, confirmación, ganador) van a la persona de contacto cuando la orden no
+  tiene teléfono propio, redactados en tercera persona ("te escribo por la reserva de Doña Marta…").
 
 ## Fase 3: sorteo y avisos
 

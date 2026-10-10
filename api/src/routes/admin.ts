@@ -5,13 +5,15 @@ import { z } from 'zod';
 import { sequelize } from '../db';
 import { badRequest, conflict, forbidden, notFound, wrap } from '../errors';
 import { AuthedRequest, assertRole, csrfGuard, raffleRole, requireAuth } from '../middleware/auth';
-import { Draw, Order, PaymentProof, Prize, Raffle, RaffleMember, Seller, User } from '../models';
+import { Contact, Draw, Order, PaymentProof, Prize, Raffle, RaffleMember, Seller, User } from '../models';
 import { proofPath } from '../services/files';
 import { cancelOrder, confirmOrder, expireOrders, extendOrder, raffleOf, reserve } from '../services/orders';
 import { audit, createRaffle, raffleSummary, regenerateStructure } from '../services/raffles';
 import { addMember, removeMember, sellerStats, sellerOfUser } from '../services/sellers';
+import { contactFields } from '../services/contacts';
 import { teamRouter } from './team';
 import { drawsRouter } from './draws';
+import { contactsRouter } from './contacts';
 import { drawsStarted } from '../services/draws';
 
 export const adminRouter = Router();
@@ -253,10 +255,12 @@ adminRouter.get(
       `SELECT t.numero, b.numero AS talonario, t.estado, o.id AS "ordenId",
               o.comprador_nombre AS "compradorNombre", o.comprador_contacto AS "compradorContacto",
               o.creada_en AS fecha, o.canal, o.seller_id AS "ordenVendedorId",
+              c.nombre AS "contactoNombre", c.telefono AS "contactoTelefono", COALESCE(o.contacto_vendio, false) AS "contactoVendio",
               t.seller_id AS "vendedorId", su.nombre AS "vendedorNombre"
        FROM tickets t
        JOIN booklets b ON b.id = t.booklet_id
        LEFT JOIN orders o ON o.id = t.order_id
+       LEFT JOIN contacts c ON c.id = o.contact_id
        LEFT JOIN sellers s ON s.id = t.seller_id
        LEFT JOIN users su ON su.id = s.user_id
        WHERE t.raffle_id = :id ${estado ? 'AND t.estado = :estado' : ''}
@@ -267,7 +271,16 @@ adminRouter.get(
     if (seller) {
       for (const r of rows) {
         if (r.ordenId && r.ordenVendedorId !== seller.id) {
-          Object.assign(r, { ordenId: null, compradorNombre: null, compradorContacto: null, fecha: null, canal: null });
+          Object.assign(r, {
+            ordenId: null,
+            compradorNombre: null,
+            compradorContacto: null,
+            contactoNombre: null,
+            contactoTelefono: null,
+            contactoVendio: false,
+            fecha: null,
+            canal: null,
+          });
         }
       }
     }
@@ -288,11 +301,18 @@ adminRouter.get(
       order: [['creadaEn', 'DESC']],
     });
     const names = await sellerNames(Number(req.params.id));
+    const contacts = new Map(
+      ((await Contact.findAll({ where: { raffleId: req.params.id } })) as any[]).map((c) => [c.id, { id: c.id, nombre: c.nombre, telefono: c.telefono }]),
+    );
     // El token del comprador no se expone al equipo
     res.json(
       orders.map((o: any) => {
         const { token, ...rest } = o.toJSON();
-        return { ...rest, vendedorNombre: rest.sellerId ? names.get(rest.sellerId) ?? null : null };
+        return {
+          ...rest,
+          vendedorNombre: rest.sellerId ? names.get(rest.sellerId) ?? null : null,
+          contacto: rest.contactId ? contacts.get(rest.contactId) ?? null : null,
+        };
       }),
     );
   }),
@@ -300,14 +320,30 @@ adminRouter.get(
 
 const saleBody = z.object({
   compradorNombre: z.string().trim().min(2).max(120),
-  compradorContacto: z.string().trim().min(6).max(120),
+  /** Teléfono del comprador: opcional si se elige una persona de contacto (al menos uno de los dos) */
+  compradorContacto: z.string().trim().max(120).nullable().optional(),
+  contactoId: z.number().int().nullable().optional(),
+  /** La persona de contacto vendió el número (cuenta en su rendición) */
+  contactoVendio: z.boolean().default(false),
   pagada: z.boolean().default(false),
   /** Solo el equipo elige a quién atribuir la venta; un vendedor siempre vende a su nombre */
   vendedorId: z.number().int().nullable().optional(),
 });
 
-/** Atribución y restricciones de una venta registrada desde el panel, según quién la registra. */
-async function saleContext(req: any, raffleId: number, vendedorId?: number | null) {
+/** Atribución, restricciones y forma de ubicar al comprador de una venta registrada desde el panel. */
+async function saleContext(
+  req: any,
+  raffleId: number,
+  v: { vendedorId?: number | null; compradorContacto?: string | null; contactoId?: number | null; contactoVendio?: boolean },
+) {
+  const seller = sellerOf(req);
+  // Los contactos son del organizador y los editores: un vendedor registra el teléfono del comprador
+  if (seller && v.contactoId) throw forbidden('Solo el equipo puede asociar personas de contacto');
+  const contact = await contactFields(raffleId, v);
+  return { ...contact, ...(await attribution(req, raffleId, v.vendedorId)) };
+}
+
+async function attribution(req: any, raffleId: number, vendedorId?: number | null) {
   const seller = sellerOf(req);
   if (seller) return { sellerId: seller.id as number, respetarAsignacion: true };
   if (vendedorId) {
@@ -334,8 +370,8 @@ adminRouter.post(
       .parse(req.body);
     const raffle = await Raffle.findByPk(req.params.id);
     if (!raffle) throw notFound();
-    const { vendedorId, ...input } = body;
-    const ctx = await saleContext(req, Number(req.params.id), vendedorId);
+    const { vendedorId, compradorContacto, contactoId, contactoVendio, ...input } = body;
+    const ctx = await saleContext(req, Number(req.params.id), { vendedorId, compradorContacto, contactoId, contactoVendio });
     const order: any = await reserve(raffle, { ...input, ...ctx, confirmadaPor: uid(req) });
     res.status(201).json({ id: order.id, estado: order.estado, numeros: order.numeros, monto: order.monto, venceEn: order.venceEn });
   }),
@@ -358,9 +394,9 @@ adminRouter.post(
 
     const resultados: any[] = [];
     for (const [i, v] of body.ventas.entries()) {
-      const { vendedorId, ...input } = v;
+      const { vendedorId, compradorContacto, contactoId, contactoVendio, ...input } = v;
       try {
-        const ctx = await saleContext(req, Number(req.params.id), vendedorId);
+        const ctx = await saleContext(req, Number(req.params.id), { vendedorId, compradorContacto, contactoId, contactoVendio });
         const order: any = await reserve(raffle, { ...input, tipo: 'numeros', canal: body.canal, ...ctx, confirmadaPor: uid(req) });
         resultados.push({ fila: i + 1, ok: true, ordenId: order.id, numeros: order.numeros, estado: order.estado });
       } catch (e: any) {
@@ -422,3 +458,6 @@ adminRouter.use(teamRouter);
 
 // Sorteo (fase 3)
 adminRouter.use(drawsRouter);
+
+// Personas de contacto
+adminRouter.use(contactsRouter);

@@ -118,7 +118,9 @@ export interface InvitationView {
 export interface BulkSale {
   numeros: number[];
   compradorNombre: string;
-  compradorContacto: string;
+  compradorContacto?: string;
+  contactoId?: number;
+  contactoVendio?: boolean;
   pagada: boolean;
   vendedorId?: number | null;
 }
@@ -133,7 +135,12 @@ export interface AdminOrder {
   tipo: 'numeros' | 'talonario';
   canal: 'web' | 'fisica' | 'manual';
   compradorNombre: string;
-  compradorContacto: string;
+  /** Teléfono del comprador; puede faltar si la orden tiene persona de contacto */
+  compradorContacto: string | null;
+  contactId: number | null;
+  contacto: ContactRef | null;
+  /** La persona de contacto vendió el número (cuenta en su rendición) */
+  contactoVendio: boolean;
   numeros: number[];
   monto: number;
   estado: OrderState;
@@ -155,10 +162,33 @@ export interface AdminTicket {
   compradorContacto: string | null;
   fecha: string | null;
   canal: AdminOrder['canal'] | null;
+  contactoNombre: string | null;
+  contactoTelefono: string | null;
+  contactoVendio: boolean;
   /** Vendedor que tiene el número en su talonario físico */
   vendedorId: number | null;
   vendedorNombre: string | null;
 }
+
+/** Persona de contacto de la rifa (a quién llamar por una venta) */
+export interface ContactRef {
+  id: number;
+  nombre: string;
+  telefono: string;
+}
+
+export interface Contact extends ContactRef {
+  nota: string;
+  /** Órdenes a su cargo (sin contar canceladas) */
+  ordenes: number;
+  /** Rendición de lo que vendió */
+  vendidos: number;
+  reservados: number;
+  recaudado: number;
+  porCobrar: number;
+}
+
+export type ContactInput = { nombre: string; telefono: string; nota: string };
 
 export interface Member {
   userId: number;
@@ -172,7 +202,10 @@ export interface ManualSaleInput {
   numeros?: number[];
   talonario?: number;
   compradorNombre: string;
-  compradorContacto: string;
+  /** Opcional si hay persona de contacto (al menos uno de los dos) */
+  compradorContacto?: string;
+  contactoId?: number;
+  contactoVendio?: boolean;
   canal: 'fisica' | 'manual';
   pagada: boolean;
   vendedorId?: number | null;
@@ -243,6 +276,12 @@ export const adminApi = {
   createInvitation: (id: number, rol: 'editor' | 'vendedor') => send<InvitationView>('POST', `/admin/rifas/${id}/invitaciones`, { rol }),
   revokeInvitation: (invId: number) => send<InvitationView>('POST', `/admin/invitaciones/${invId}/revocar`),
 
+  contacts: (id: number) => request<Contact[]>(`/admin/rifas/${id}/contactos`),
+  createContact: (id: number, body: ContactInput) => send<Contact>('POST', `/admin/rifas/${id}/contactos`, body),
+  updateContact: (id: number, contactId: number, body: Partial<ContactInput>) =>
+    send<Contact>('PATCH', `/admin/rifas/${id}/contactos/${contactId}`, body),
+  deleteContact: (id: number, contactId: number) => send<void>('DELETE', `/admin/rifas/${id}/contactos/${contactId}`),
+
   draws: (id: number) => request<AdminDraw[]>(`/admin/rifas/${id}/sorteos`),
   drawPrize: (id: number, body: DrawInput) => send<AdminDraw>('POST', `/admin/rifas/${id}/sorteos`, body),
   annulDraw: (drawId: number, motivo: string) => send<AdminDraw>('POST', `/admin/sorteos/${drawId}/anular`, { motivo }),
@@ -252,6 +291,8 @@ export interface AdminDraw extends PublicDraw {
   ordenId: number | null;
   compradorNombre: string | null;
   compradorContacto: string | null;
+  contactoNombre?: string | null;
+  contactoTelefono?: string | null;
   vendedorNombre: string | null;
 }
 
@@ -292,12 +333,36 @@ function splitLine(line: string): string[] {
 
 export type BulkRow = { linea: number; venta?: BulkSale; error?: string };
 
+const digits = (s: string) => s.replace(/\D/g, '');
+const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
+/** Busca un contacto de la rifa por su teléfono (solo dígitos) o por su nombre (sin importar tildes ni mayúsculas) */
+export function findContactRef(contacts: ContactRef[], text: string): ContactRef | null {
+  const d = digits(text);
+  if (d.length >= 6) {
+    const byPhone = contacts.find((c) => digits(c.telefono).endsWith(d) || d.endsWith(digits(c.telefono)));
+    if (byPhone) return byPhone;
+  }
+  return contacts.find((c) => plain(c.nombre) === plain(text)) ?? null;
+}
+
+export interface BulkOptions {
+  /** Contactos de la rifa, para resolver la 5ª columna */
+  contactos?: ContactRef[];
+  /** Persona de contacto para las filas que no indican una */
+  contactoPorDefecto?: number | null;
+  /** La persona de contacto vendió (rinde el dinero) */
+  contactoVendio?: boolean;
+}
+
 /**
- * Carga rápida: una venta por línea, "números; nombre; contacto[; pagada]".
+ * Carga rápida: una venta por línea, "números; nombre; teléfono[; pagada][; contacto]".
  * Los números aceptan rangos (10-12). Se ignoran líneas vacías y un encabezado.
  * La 4ª columna (si/no, pagada/pendiente) cambia el valor por defecto de esa fila.
+ * El teléfono puede quedar vacío si la fila tiene persona de contacto (5ª columna, con su nombre o teléfono,
+ * o la elegida para todo el lote): toda venta necesita al menos una forma de ubicar al comprador.
  */
-export function parseBulk(text: string, max: number, pagadaPorDefecto: boolean): BulkRow[] {
+export function parseBulk(text: string, max: number, pagadaPorDefecto: boolean, opts: BulkOptions = {}): BulkRow[] {
   const rows: BulkRow[] = [];
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.replace(/^\ufeff/, '').trim();
@@ -305,12 +370,19 @@ export function parseBulk(text: string, max: number, pagadaPorDefecto: boolean):
     if (i === 0 && /n[uú]mero/i.test(line) && /nombre|comprador/i.test(line)) return;
     const linea = i + 1;
     const cols = splitLine(line);
-    if (cols.length < 3) return rows.push({ linea, error: 'Faltan columnas: números; nombre; contacto' });
-    const [nums, nombre, contacto, pagadaCol] = cols;
+    if (cols.length < 2) return rows.push({ linea, error: 'Faltan columnas: números; nombre; teléfono' });
+    const [nums, nombre, telefono = '', pagadaCol = '', contactoCol = ''] = cols;
     const numeros = parseNumberList(nums, max);
     if (typeof numeros === 'string') return rows.push({ linea, error: numeros });
     if (nombre.length < 2) return rows.push({ linea, error: 'Falta el nombre' });
-    if (contacto.length < 6) return rows.push({ linea, error: 'El contacto debe tener al menos 6 caracteres' });
+    if (telefono && telefono.length < 6) return rows.push({ linea, error: 'El teléfono debe tener al menos 6 caracteres' });
+    let contactoId = opts.contactoPorDefecto ?? null;
+    if (contactoCol) {
+      const found = findContactRef(opts.contactos ?? [], contactoCol);
+      if (!found) return rows.push({ linea, error: `No hay una persona de contacto "${contactoCol}" en la rifa` });
+      contactoId = found.id;
+    }
+    if (!telefono && !contactoId) return rows.push({ linea, error: 'Falta el teléfono o la persona de contacto' });
     let pagada = pagadaPorDefecto;
     if (pagadaCol) {
       const p = pagadaCol.toLowerCase();
@@ -318,7 +390,16 @@ export function parseBulk(text: string, max: number, pagadaPorDefecto: boolean):
       else if (/^(no|pendiente|0|false)$/.test(p)) pagada = false;
       else return rows.push({ linea, error: `"${pagadaCol}" no es sí/no` });
     }
-    rows.push({ linea, venta: { numeros, compradorNombre: nombre, compradorContacto: contacto, pagada } });
+    rows.push({
+      linea,
+      venta: {
+        numeros,
+        compradorNombre: nombre,
+        ...(telefono ? { compradorContacto: telefono } : {}),
+        ...(contactoId ? { contactoId, contactoVendio: Boolean(opts.contactoVendio) } : {}),
+        pagada,
+      },
+    });
   });
   return rows;
 }

@@ -50,6 +50,9 @@ const order = (over: Partial<AdminOrder> = {}): AdminOrder => ({
   sellerId: null,
   vendedorNombre: null,
   shareLinkId: null,
+  contactId: null,
+  contacto: null,
+  contactoVendio: false,
   comprobantes: [{ id: 9, nombreOriginal: 'transferencia.png', subidoEn: new Date().toISOString() }],
   ...over,
 });
@@ -239,7 +242,7 @@ describe('órdenes', () => {
     const dialog = screen.getByRole('dialog', { name: 'Registrar venta' });
     await user.type(within(dialog).getByLabelText('Números'), '4, 7, 10-12');
     await user.type(within(dialog).getByLabelText('Comprador'), 'Pedro');
-    await user.type(within(dialog).getByLabelText('Teléfono o contacto'), '912345678');
+    await user.type(within(dialog).getByLabelText('Teléfono del comprador'), '912345678');
     expect(within(dialog).getByText('$5.000')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Registrar' }));
     expect(await screen.findByText(/Venta registrada \(orden #11\)/)).toBeInTheDocument();

@@ -3,8 +3,10 @@ export const money = (n: number) => clp.format(n);
 
 const dateFmt = new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const shortFmt = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-export const longDate = (iso: string) => dateFmt.format(new Date(iso));
-export const shortDate = (iso: string) => shortFmt.format(new Date(iso));
+/** "12:00 p. m." no se corta entre líneas: espacios que no se separan dentro de la hora */
+const keepTime = (s: string) => s.replace(/(\d{1,2}:\d{2})\s+([ap])\.\s*m\./g, '$1 $2. m.');
+export const longDate = (iso: string) => keepTime(dateFmt.format(new Date(iso)));
+export const shortDate = (iso: string) => keepTime(shortFmt.format(new Date(iso)));
 
 const dayFmt = new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
 const timeFmt = new Intl.DateTimeFormat('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });

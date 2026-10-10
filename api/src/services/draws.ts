@@ -131,7 +131,11 @@ export async function drawPrize(raffleId: number, input: DrawInput, actorId: num
   const raffle: any = await Raffle.findByPk(raffleId);
   void notifyTeam(raffleId, `Sorteo de ${raffle.nombre}: ${result.premio.nombre}`, [
     `El número ${result.numero} ganó "${result.premio.nombre}" (${result.premio.orden}° premio).`,
-    result.compradorNombre ? `Ganador: ${result.compradorNombre} · ${result.compradorContacto}` : '',
+    result.compradorNombre
+      ? `Ganador: ${result.compradorNombre}` +
+        (result.compradorContacto ? ` · ${result.compradorContacto}` : '') +
+        (result.contactoNombre ? ` (contacto: ${result.contactoNombre} · ${result.contactoTelefono})` : '')
+      : '',
     result.modo === 'aleatorio'
       ? `Sorteo al azar entre ${result.participantes} números pagados (semilla ${result.semilla}).`
       : `Sorteo externo: ${result.detalle}.`,
@@ -170,6 +174,8 @@ export interface DrawView {
   ordenId?: number | null;
   compradorNombre?: string | null;
   compradorContacto?: string | null;
+  contactoNombre?: string | null;
+  contactoTelefono?: string | null;
   vendedorNombre?: string | null;
 }
 
@@ -180,11 +186,13 @@ export async function listDraws(raffleId: number, team: boolean): Promise<DrawVi
             d.sorteado_en AS "sorteadoEn", d.anulado_en AS "anuladoEn", d.motivo_anulacion AS "motivoAnulacion",
             p.id AS "premioId", p.orden AS "premioOrden", p.nombre AS "premioNombre", t.numero,
             o.id AS "ordenId", o.comprador_nombre AS "compradorNombre", o.comprador_contacto AS "compradorContacto",
+            c.nombre AS "contactoNombre", c.telefono AS "contactoTelefono",
             su.nombre AS "vendedorNombre"
      FROM draws d
      JOIN prizes p ON p.id = d.prize_id
      JOIN tickets t ON t.id = d.ticket_id
      LEFT JOIN orders o ON o.id = t.order_id
+     LEFT JOIN contacts c ON c.id = o.contact_id
      LEFT JOIN sellers s ON s.id = o.seller_id
      LEFT JOIN users su ON su.id = s.user_id
      WHERE d.raffle_id = :raffleId
@@ -204,7 +212,14 @@ export async function listDraws(raffleId: number, team: boolean): Promise<DrawVi
     anuladoEn: r.anuladoEn,
     motivoAnulacion: r.motivoAnulacion,
     ...(team
-      ? { ordenId: r.ordenId, compradorNombre: r.compradorNombre, compradorContacto: r.compradorContacto, vendedorNombre: r.vendedorNombre }
+      ? {
+          ordenId: r.ordenId,
+          compradorNombre: r.compradorNombre,
+          compradorContacto: r.compradorContacto,
+          contactoNombre: r.contactoNombre,
+          contactoTelefono: r.contactoTelefono,
+          vendedorNombre: r.vendedorNombre,
+        }
       : {}),
   }));
 }

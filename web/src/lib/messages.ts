@@ -34,33 +34,68 @@ function bankLines(r: AdminRaffle): string {
     .join('\n');
 }
 
-/** Mensaje según el estado de la orden; null si no corresponde avisar (cancelada) */
+/** A quién avisar: el comprador si dejó teléfono; si no, su persona de contacto */
+export interface Recipient {
+  nombre: string;
+  telefono: string;
+  /** Es la persona de contacto, no el comprador: el mensaje habla del comprador en tercera persona */
+  esContacto: boolean;
+}
+
+export function orderRecipient(o: Pick<AdminOrder, 'compradorNombre' | 'compradorContacto' | 'contacto'>): Recipient | null {
+  if (o.compradorContacto) return { nombre: o.compradorNombre, telefono: o.compradorContacto, esContacto: false };
+  if (o.contacto) return { nombre: o.contacto.nombre, telefono: o.contacto.telefono, esContacto: true };
+  return null;
+}
+
+export function drawRecipient(d: AdminDraw): Recipient | null {
+  if (d.compradorContacto) return { nombre: d.compradorNombre ?? '', telefono: d.compradorContacto, esContacto: false };
+  if (d.contactoTelefono) return { nombre: d.contactoNombre ?? '', telefono: d.contactoTelefono, esContacto: true };
+  return null;
+}
+
+/** Mensaje según el estado de la orden; null si no corresponde avisar (cancelada) o no hay a quién */
 export function orderMessage(o: AdminOrder, r: AdminRaffle): string | null {
-  const name = firstName(o.compradorNombre);
+  const to = orderRecipient(o);
+  if (!to) return null;
+  const name = firstName(to.nombre);
+  const buyer = o.compradorNombre;
   const nums = o.numeros.join(', ');
+  const numsLabel = `${o.numeros.length === 1 ? 'número' : 'números'} ${nums}`;
   switch (o.estado) {
     case 'pendiente':
       return (
-        `Hola ${name}, te escribo por tu reserva en la rifa "${r.nombre}": ${o.numeros.length === 1 ? 'número' : 'números'} ${nums} ` +
-        `por ${money(o.monto)}. La reserva vence el ${shortDate(o.venceEn)}.\n\nDatos para transferir:\n${bankLines(r)}\n\n` +
+        (to.esContacto
+          ? `Hola ${name}, te escribo por la reserva de ${buyer} en la rifa "${r.nombre}": ${numsLabel} por ${money(o.monto)}. `
+          : `Hola ${name}, te escribo por tu reserva en la rifa "${r.nombre}": ${numsLabel} por ${money(o.monto)}. `) +
+        `La reserva vence el ${shortDate(o.venceEn)}.\n\nDatos para transferir:\n${bankLines(r)}\n\n` +
         `Cuando transfieras, sube el comprobante en el enlace que recibiste al reservar o envíamelo por aquí. ¡Gracias!`
       );
     case 'pagada':
-      return (
-        `Hola ${name}, confirmamos tu pago de ${money(o.monto)} en la rifa "${r.nombre}". ` +
-        `Tus números ${nums} participan en el sorteo del ${longDate(r.fechaSorteo)} ¡Mucha suerte!`
-      );
+      return to.esContacto
+        ? `Hola ${name}, confirmamos el pago de ${buyer} (${money(o.monto)}) en la rifa "${r.nombre}". ` +
+            `Sus números ${nums} participan en el sorteo del ${longDate(r.fechaSorteo)} ¡Mucha suerte!`
+        : `Hola ${name}, confirmamos tu pago de ${money(o.monto)} en la rifa "${r.nombre}". ` +
+            `Tus números ${nums} participan en el sorteo del ${longDate(r.fechaSorteo)} ¡Mucha suerte!`;
     case 'vencida':
-      return (
-        `Hola ${name}, tu reserva de los números ${nums} en la rifa "${r.nombre}" venció y los números quedaron libres. ` +
-        `Si ya transferiste, avísame y la reactivo.`
-      );
+      return to.esContacto
+        ? `Hola ${name}, la reserva de ${buyer} (${numsLabel}) en la rifa "${r.nombre}" venció y los números quedaron libres. ` +
+            `Si ya transfirió, avísame y la reactivo.`
+        : `Hola ${name}, tu reserva de los números ${nums} en la rifa "${r.nombre}" venció y los números quedaron libres. ` +
+            `Si ya transferiste, avísame y la reactivo.`;
     default:
       return null;
   }
 }
 
 export function winnerMessage(d: AdminDraw, r: AdminRaffle): string {
+  const to = drawRecipient(d);
+  if (to?.esContacto) {
+    return (
+      `¡Hola ${firstName(to.nombre)}! El número ${d.numero} de ${d.compradorNombre ?? 'tu referido'} ganó el ${d.premio.orden}° premio de la rifa ` +
+      `"${r.nombre}": ${d.premio.nombre}. Escríbeme para coordinar la entrega. ¡Felicitaciones!`
+    );
+  }
   return (
     `¡Hola ${firstName(d.compradorNombre ?? '')}! Tu número ${d.numero} ganó el ${d.premio.orden}° premio de la rifa ` +
     `"${r.nombre}": ${d.premio.nombre}. Escríbeme para coordinar la entrega. ¡Felicitaciones!`

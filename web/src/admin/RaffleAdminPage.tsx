@@ -1,11 +1,12 @@
 import { ArrowLeftIcon } from '../components/icons';
 import { useState } from 'react';
-import { Link, NavLink, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, sellerUrl, type AdminRaffle, type RaffleState, type Rol } from '../lib/admin';
 import { longDate, money } from '../lib/format';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { BulkTab } from './BulkTab';
+import { ContactsTab } from './ContactsTab';
 import { CopyLink } from './CopyLink';
 import { DrawTab } from './DrawTab';
 import { RAFFLE_STATE } from './labels';
@@ -14,6 +15,7 @@ import { NumbersTab } from './NumbersTab';
 import { OrdersTab } from './OrdersTab';
 import { SellersTab } from './SellersTab';
 import { SettingsTab } from './SettingsTab';
+import { TabBar } from './TabBar';
 import { useAdminLoad } from './session';
 
 const ALL: Rol[] = ['organizador', 'editor', 'vendedor'];
@@ -23,6 +25,7 @@ const TABS: { key: string; label: string; roles: Rol[] }[] = [
   { key: 'ordenes', label: 'Órdenes', roles: ALL },
   { key: 'numeros', label: 'Números', roles: ALL },
   { key: 'vendedores', label: 'Vendedores', roles: TEAM },
+  { key: 'contactos', label: 'Contactos', roles: TEAM },
   { key: 'carga', label: 'Carga rápida', roles: ALL },
   { key: 'enlaces', label: 'Enlaces de pago', roles: ALL },
   { key: 'sorteo', label: 'Sorteo', roles: TEAM },
@@ -62,13 +65,7 @@ export function RaffleAdminPage() {
         <p className="muted small">Sorteo: {longDate(raffle.fechaSorteo)}</p>
       </header>
 
-      <nav className="tabs" aria-label="Secciones de la rifa">
-        {tabs.map((t) => (
-          <NavLink key={t.key} to={`/admin/rifas/${id}/${t.key}`} className={() => (tab === t.key ? 'active' : '')} aria-current={tab === t.key ? 'page' : undefined}>
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+      <TabBar label="Secciones de la rifa" current={tab} items={tabs.map((t) => ({ key: t.key, label: t.label, to: `/admin/rifas/${id}/${t.key}` }))} />
 
       {!allowed && TABS.some((t) => t.key === tab) && <p className="banner">Tu rol en esta rifa no tiene acceso a esta sección.</p>}
       {!TABS.some((t) => t.key === tab) && <NotFoundPage title="Sección no encontrada" text="" />}
@@ -76,6 +73,7 @@ export function RaffleAdminPage() {
       {allowed && tab === 'ordenes' && <OrdersTab raffle={raffle} onChanged={reload} />}
       {allowed && tab === 'numeros' && <NumbersTab raffle={raffle} />}
       {allowed && tab === 'vendedores' && <SellersTab raffle={raffle} />}
+      {allowed && tab === 'contactos' && <ContactsTab raffle={raffle} />}
       {allowed && tab === 'carga' && <BulkTab raffle={raffle} onChanged={reload} />}
       {allowed && tab === 'enlaces' && <LinksTab raffle={raffle} />}
       {allowed && tab === 'sorteo' && <DrawTab raffle={raffle} onChanged={reload} />}

@@ -213,7 +213,7 @@ describe('avisos a compradores', () => {
   const order = (over: Partial<AdminOrder> = {}): AdminOrder => ({
     id: 5, tipo: 'numeros', canal: 'web', compradorNombre: 'Juan Soto', compradorContacto: '9 1111 2222', numeros: [4, 5], monto: 2000,
     estado: 'pendiente', creadaEn: past, venceEn: new Date(Date.now() + 20 * 3600 * 1000).toISOString(), pagadaEn: null,
-    sellerId: null, vendedorNombre: null, shareLinkId: null, comprobantes: [], ...over,
+    sellerId: null, vendedorNombre: null, shareLinkId: null, contactId: null, contacto: null, contactoVendio: false, comprobantes: [], ...over,
   });
 
   it('recordatorio de pago por WhatsApp con monto y datos bancarios; filtro "Vencen pronto"', async () => {

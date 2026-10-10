@@ -1,13 +1,27 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { adminApi, describeError, type AdminDraw, type AdminRaffle, type DrawInput, type Prize } from '../lib/admin';
 import { plural, shortDate } from '../lib/format';
-import { whatsappLink, winnerMessage } from '../lib/messages';
+import { drawRecipient, winnerMessage } from '../lib/messages';
+import { SpeakerHighIcon, SpeakerSlashIcon } from '../components/icons';
 import { CopyLink } from './CopyLink';
+import { createDrawSound, launchConfetti, preloadDrawSounds, shortName, suspenseDelays, type DrawSound } from './drawFx';
+import { DrawStage, type StageState } from './DrawStage';
 import { NotifyButton } from './NotifyButton';
+import { ContactLine, Phone } from './Phone';
 import { useAdminLoad } from './session';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Preferencia de sonido del sorteo, recordada en este navegador (activada por defecto) */
+const SOUND_KEY = 'mis-rifas:sonido-sorteo';
+const readSoundPref = () => {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+};
 /** Sin matchMedia (o con movimiento reducido) no hay animación */
 const reducedMotion = () => !window.matchMedia || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -17,6 +31,20 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
   const paid = useAdminLoad(() => adminApi.tickets(raffle.id, 'pagado'), 60_000);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [soundOn, setSoundOn] = useState(readSoundPref);
+  const toggleSound = () =>
+    setSoundOn((on) => {
+      try {
+        localStorage.setItem(SOUND_KEY, on ? 'off' : 'on');
+      } catch {
+        /* sin almacenamiento: vale solo para esta sesión */
+      }
+      return !on;
+    });
+  // Las grabaciones del redoble se bajan al abrir la pestaña, para que suenen apenas se sortea
+  useEffect(() => {
+    if (soundOn && !reducedMotion()) void preloadDrawSounds();
+  }, [soundOn]);
   const isOrganizer = raffle.rol === 'organizador';
   const prizes = [...raffle.premios].sort((a, b) => a.orden - b.orden);
   const valid = (draws ?? []).filter((d) => !d.anuladoEn);
@@ -58,11 +86,22 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
           </>
         )}
         {raffle.estado === 'cerrada' && (
-          <p className="small">
-            Participan <b>{plural(participants, 'número pagado', 'números pagados')}</b>. Un número que ya ganó no vuelve a participar.
-            {raffle.resumen.reservados > 0 &&
-              ` Hay ${plural(raffle.resumen.reservados, 'número reservado', 'números reservados')} sin pagar: ${raffle.resumen.reservados === 1 ? 'no participa' : 'no participan'}.`}
-          </p>
+          <>
+            <p className="small">
+              Participan <b>{plural(participants, 'número pagado', 'números pagados')}</b>. Un número que ya ganó no vuelve a participar.
+              {raffle.resumen.reservados > 0 &&
+                ` Hay ${plural(raffle.resumen.reservados, 'número reservado', 'números reservados')} sin pagar: ${raffle.resumen.reservados === 1 ? 'no participa' : 'no participan'}.`}
+            </p>
+            {isOrganizer && (
+              <div className="row">
+                <button type="button" className="btn small" onClick={toggleSound} aria-pressed={soundOn}>
+                  {soundOn ? <SpeakerHighIcon size={18} aria-hidden="true" /> : <SpeakerSlashIcon size={18} aria-hidden="true" />}
+                  {soundOn ? 'Sonido del sorteo activado' : 'Sonido del sorteo desactivado'}
+                </button>
+                <span className="muted small">Ideal para compartir la pantalla en vivo.</span>
+              </div>
+            )}
+          </>
         )}
         {raffle.estado === 'sorteada' && (
           <>
@@ -83,6 +122,8 @@ export function DrawTab({ raffle, onChanged }: { raffle: AdminRaffle; onChanged:
               draw={valid.find((d) => d.premio.id === p.id) ?? null}
               pool={pool}
               canDraw={isOrganizer && raffle.estado === 'cerrada'}
+              soundOn={soundOn}
+              onToggleSound={toggleSound}
               onChanged={refresh}
             />
           </li>
@@ -113,18 +154,40 @@ interface PrizeDrawProps {
   /** Números que participan (para la animación) */
   pool: number[];
   canDraw: boolean;
+  soundOn: boolean;
+  onToggleSound: () => void;
   onChanged: () => Promise<void>;
 }
 
-function PrizeDraw({ raffle, prize, draw, pool, canDraw, onChanged }: PrizeDrawProps) {
+function PrizeDraw({ raffle, prize, draw, pool, canDraw, soundOn, onToggleSound, onChanged }: PrizeDrawProps) {
   const total = raffle.cantidadTalonarios * raffle.numerosPorTalonario;
   const [manual, setManual] = useState(false);
   const [numero, setNumero] = useState('');
   const [detalle, setDetalle] = useState('');
   const [busy, setBusy] = useState(false);
-  const [rolling, setRolling] = useState<number | null>(null);
+  const [stage, setStage] = useState<StageState | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Efectos en curso: se cortan al cerrar el escenario, al saltar o si el componente desaparece
+  const soundRef = useRef<DrawSound | null>(null);
+  const confettiRef = useRef<(() => void) | null>(null);
+  const skipRef = useRef(false);
+
+  useEffect(() => soundRef.current?.setMuted(!soundOn), [soundOn]);
+  useEffect(
+    () => () => {
+      soundRef.current?.stop();
+      confettiRef.current?.();
+    },
+    [],
+  );
+
+  /** Un número del bombo distinto al anterior (y, hasta el final, distinto del ganador) */
+  const pick = (prev: number | undefined, avoid?: number) => {
+    const options = pool.filter((n) => n !== prev && n !== avoid);
+    const from = options.length ? options : pool;
+    return from[Math.floor(Math.random() * from.length)];
+  };
 
   async function run(confirmarPendientes = false) {
     const body: DrawInput = manual
@@ -132,24 +195,78 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, onChanged }: PrizeDrawP
       : { premioId: prize.id, modo: 'aleatorio', confirmarPendientes };
     setBusy(true);
     setError(null);
-    // Animación de "tómbola" mientras sale el número (útil si se comparte la pantalla en vivo)
-    const animate = !manual && pool.length > 1 && !reducedMotion();
-    const timer = animate ? setInterval(() => setRolling(pool[Math.floor(Math.random() * pool.length)]), 70) : undefined;
+    const motion = !reducedMotion();
+    // Suspenso solo en el sorteo al azar; el resultado externo se celebra directo
+    const suspense = motion && !manual && pool.length > 1;
+    // El audio se prepara dentro del clic (los navegadores lo exigen); suena solo si hay escenario
+    const sound = motion ? createDrawSound(!soundOn) : null;
+    soundRef.current = sound;
+    skipRef.current = false;
+
+    let current: number | undefined;
+    let rollTimer: ReturnType<typeof setInterval> | undefined;
+    let shown = false;
+    // Giro rápido mientras responde el servidor. Se muestra recién a los 250 ms: si la API responde con
+    // un aviso (reservas pendientes), el escenario no alcanza a aparecer.
+    const show = () => {
+      if (shown) return;
+      shown = true;
+      current = pick(undefined);
+      setStage({ phase: 'rolling', numero: current });
+      sound?.start();
+      rollTimer = setInterval(() => {
+        current = pick(current);
+        setStage({ phase: 'rolling', numero: current });
+        sound?.tick(0);
+      }, 70);
+    };
+    const showTimer = suspense ? setTimeout(show, 250) : undefined;
     const started = Date.now();
+
     try {
-      await adminApi.drawPrize(raffle.id, body);
-      if (animate) await sleep(Math.max(0, 1500 - (Date.now() - started)));
+      const d = await adminApi.drawPrize(raffle.id, body);
+      clearTimeout(showTimer);
+      if (suspense) {
+        show();
+        await sleep(Math.max(0, 1500 - (Date.now() - started)));
+        clearInterval(rollTimer);
+        // La tómbola frena hasta caer en el ganador
+        const delays = suspenseDelays();
+        for (let i = 0; i < delays.length && !skipRef.current; i++) {
+          const last = i === delays.length - 1;
+          current = last ? d.numero : pick(current, d.numero);
+          setStage({ phase: 'rolling', numero: current });
+          sound?.tick(i / (delays.length - 1));
+          await sleep(delays[i]);
+        }
+      }
+      if (motion) {
+        setStage({ phase: 'reveal', numero: d.numero, ganador: shortName(d.compradorNombre) });
+        sound?.reveal();
+        confettiRef.current?.();
+        confettiRef.current = launchConfetti();
+      }
       setPending(null);
       setManual(false);
       await onChanged();
     } catch (err) {
+      clearTimeout(showTimer);
+      setStage(null);
+      sound?.stop();
       if (err instanceof ApiError && err.code === 'pending_orders') setPending(err.message);
       else setError(err instanceof ApiError ? describeError(err) : 'No se pudo sortear.');
     } finally {
-      clearInterval(timer);
-      setRolling(null);
+      clearInterval(rollTimer);
       setBusy(false);
     }
+  }
+
+  function closeStage() {
+    setStage(null);
+    soundRef.current?.stop();
+    soundRef.current = null;
+    confettiRef.current?.();
+    confettiRef.current = null;
   }
 
   function submitManual(e: FormEvent) {
@@ -169,17 +286,25 @@ function PrizeDraw({ raffle, prize, draw, pool, canDraw, onChanged }: PrizeDrawP
         {draw ? <span className="chip ok">Sorteado</span> : <span className="chip neutral">Pendiente</span>}
       </div>
 
-      {rolling !== null && (
-        <div className="drum" aria-live="off" aria-hidden="true">
-          N° {rolling}
-        </div>
+      {stage && (
+        <DrawStage
+          prize={prize}
+          total={total}
+          stage={stage}
+          soundOn={soundOn}
+          onToggleSound={onToggleSound}
+          onSkip={() => {
+            skipRef.current = true;
+          }}
+          onClose={closeStage}
+        />
       )}
 
       {draw ? (
         <Winner raffle={raffle} draw={draw} canAnnul={raffle.rol === 'organizador'} onChanged={onChanged} />
       ) : (
         canDraw &&
-        rolling === null && (
+        !stage && (
           <>
             {!manual ? (
               <div className="row">
@@ -227,7 +352,7 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
   const [motivo, setMotivo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wa = d.compradorContacto ? whatsappLink(d.compradorContacto) : null;
+  const to = drawRecipient(d);
 
   async function annul(e: FormEvent) {
     e.preventDefault();
@@ -254,7 +379,14 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
         <div>
           <b>{d.compradorNombre ?? 'Sin comprador'}</b>
           {d.compradorContacto && (
-            <span className="small"> · {wa ? <a href={wa} target="_blank" rel="noreferrer">{d.compradorContacto}</a> : d.compradorContacto}</span>
+            <span className="small">
+              {' '}· <Phone value={d.compradorContacto} />
+            </span>
+          )}
+          {d.contactoNombre && d.contactoTelefono && (
+            <p className="small">
+              <ContactLine nombre={d.contactoNombre} telefono={d.contactoTelefono} />
+            </p>
           )}
           <p className="muted small">
             {d.modo === 'aleatorio' ? `Al azar entre ${d.participantes} números` : `Sorteo externo: ${d.detalle}`} · {shortDate(d.sorteadoEn)}
@@ -264,7 +396,13 @@ function Winner({ raffle, draw: d, canAnnul, onChanged }: { raffle: AdminRaffle;
         </div>
       </div>
       <div className="row">
-        {d.compradorContacto && <NotifyButton contact={d.compradorContacto} text={winnerMessage(d, raffle)} label="Avisar al ganador" />}
+        {to && (
+          <NotifyButton
+            contact={to.telefono}
+            text={winnerMessage(d, raffle)}
+            label={to.esContacto ? `Avisar a ${to.nombre.split(' ')[0]} (contacto)` : 'Avisar al ganador'}
+          />
+        )}
         {canAnnul && !annulling && <button className="btn small danger" onClick={() => setAnnulling(true)}>Anular sorteo</button>}
       </div>
       {annulling && (
