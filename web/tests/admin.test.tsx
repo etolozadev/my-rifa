@@ -208,6 +208,30 @@ describe('órdenes', () => {
     expect(within(await screen.findByRole('article', { name: /Juan Soto/ })).getByText('Pagada')).toBeInTheDocument();
   });
 
+  it('muestra el talonario de cada número y busca por talonario', async () => {
+    const user = userEvent.setup();
+    // Talonarios de 5: el 2 completo (6-10) y el 12, que es del talonario 3
+    routes['GET /api/admin/rifas/7/ordenes'] = () => ({
+      body: [
+        order({ numeros: [12, 6, 7, 8, 9, 10], comprobantes: [] }),
+        order({ id: 6, compradorNombre: 'Ana Rojas', numeros: [1], comprobantes: [] }),
+      ],
+    });
+    mount('/admin/rifas/7/ordenes');
+    const card = await screen.findByRole('article', { name: /Juan Soto/ });
+    const lines = within(within(card).getByRole('list', { name: 'Números por talonario' })).getAllByRole('listitem');
+    expect(lines.map((li) => li.textContent)).toEqual(['Talonario 2 · completo6–10', 'Talonario 312']);
+    expect(within(screen.getByRole('article', { name: /Ana Rojas/ })).getByRole('listitem')).toHaveTextContent('Talonario 11');
+
+    await user.type(screen.getByLabelText(/Buscar/), 'talonario 3');
+    expect(screen.queryByRole('article', { name: /Ana Rojas/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: /Juan Soto/ })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/Buscar/));
+    await user.type(screen.getByLabelText(/Buscar/), 't1');
+    expect(screen.queryByRole('article', { name: /Juan Soto/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: /Ana Rojas/ })).toBeInTheDocument();
+  });
+
   it('cancelar pide confirmación', async () => {
     const user = userEvent.setup();
     routes['GET /api/admin/rifas/7/ordenes'] = () => ({ body: [order()] });

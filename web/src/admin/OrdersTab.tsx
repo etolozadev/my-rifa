@@ -3,6 +3,7 @@ import { ApiError } from '../lib/api';
 import { adminApi, describeError, type AdminOrder, type AdminRaffle } from '../lib/admin';
 import { money, plural, shortDate, timeLeft } from '../lib/format';
 import { orderMessage, orderRecipient } from '../lib/messages';
+import { bookletOf, groupByBooklet } from '../lib/selection';
 import { CHANNEL, ORDER_STATE } from './labels';
 import { ManualSaleSheet } from './ManualSaleSheet';
 import { NotifyButton } from './NotifyButton';
@@ -38,6 +39,9 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
     const f = FILTERS.find((x) => x.key === filter)!;
     const q = query.trim().toLowerCase();
     const n = Number(q);
+    // "talonario 106", "tal 106" o "t106": órdenes con algún número de ese talonario
+    const tal = /^t(?:al(?:onario)?)?\s*(\d+)$/.exec(q);
+    const k = tal ? Number(tal[1]) : null;
     return (orders ?? []).filter(
       (o) =>
         f.test(o) &&
@@ -47,9 +51,10 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
           (o.compradorContacto ?? '').toLowerCase().includes(q) ||
           (o.contacto?.nombre ?? '').toLowerCase().includes(q) ||
           (o.contacto?.telefono ?? '').toLowerCase().includes(q) ||
-          (Number.isInteger(n) && (o.numeros.includes(n) || o.id === n))),
+          (Number.isInteger(n) && (o.numeros.includes(n) || o.id === n)) ||
+          (k !== null && o.numeros.some((x) => bookletOf(x, raffle.numerosPorTalonario) === k))),
     );
-  }, [orders, filter, query]);
+  }, [orders, filter, query, raffle.numerosPorTalonario]);
 
   const refresh = async () => {
     await reload();
@@ -60,7 +65,7 @@ export function OrdersTab({ raffle, onChanged }: { raffle: AdminRaffle; onChange
     <div className="stack gap16">
       <div className="row between">
         <div className="field grow">
-          <label htmlFor="q" className="sr-only">Buscar por nombre, contacto o número</label>
+          <label htmlFor="q" className="sr-only">Buscar por nombre, contacto, número o talonario</label>
           <input id="q" type="search" placeholder="Nombre, teléfono o número" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <button className="btn primary" onClick={() => setSale(true)}>Registrar venta</button>
@@ -146,9 +151,30 @@ function OrderCard({ order: o, raffle, onChanged }: { order: AdminOrder; raffle:
         </span>
       </p>
       {o.contacto && <p className="small"><ContactLine nombre={o.contacto.nombre} telefono={o.contacto.telefono} vendio={o.contactoVendio} /></p>}
-      <div className="chips" aria-label="Números">
-        {o.numeros.map((n) => <span key={n} className="chip">{n}</span>)}
-      </div>
+      {/* Cada número con su talonario; un talonario completo se resume en su rango */}
+      <ul className="booklet-lines" aria-label="Números por talonario">
+        {groupByBooklet(o.numeros, raffle.numerosPorTalonario).map((g) => (
+          <li key={g.talonario}>
+            <span className="booklet-tag">
+              Talonario {g.talonario}
+              {g.completo && <span className="muted"> · completo</span>}
+            </span>
+            <span className="chips">
+              {g.completo && g.numeros.length > 1 ? (
+                <span className="chip">
+                  {g.numeros[0]}–{g.numeros[g.numeros.length - 1]}
+                </span>
+              ) : (
+                g.numeros.map((n) => (
+                  <span key={n} className="chip">
+                    {n}
+                  </span>
+                ))
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
       <p>
         <b>{money(o.monto)}</b> <span className="muted small">({plural(o.numeros.length, 'número', 'números')}{o.tipo === 'talonario' ? ', talonario completo' : ''})</span>
       </p>

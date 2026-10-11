@@ -3,9 +3,20 @@ import { whatsappLink } from '../src/lib/messages';
 import { findContactRef, parseBulk, parseNumberList } from '../src/lib/admin';
 import { describe, expect, it } from 'vitest';
 import { money, plural, timeLeft } from '../src/lib/format';
-import { bookletIsFree, bookletNumbers, exactBooklet, pruneSelection, toggleNumber } from '../src/lib/selection';
+import { bookletIsFree, bookletNumbers, bookletOf, exactBooklet, groupByBooklet, pruneSelection, toggleNumber } from '../src/lib/selection';
 
 describe('selection', () => {
+  it('sabe a qué talonario pertenece cada número y los agrupa', () => {
+    expect(bookletOf(1051, 10)).toBe(106);
+    expect(bookletOf(1060, 10)).toBe(106);
+    expect(bookletOf(1061, 10)).toBe(107);
+    expect(groupByBooklet([1075, 1052, 1051, 1053, 1054, 1055, 1056, 1057, 1058, 1059, 1060], 10)).toEqual([
+      { talonario: 106, numeros: [1051, 1052, 1053, 1054, 1055, 1056, 1057, 1058, 1059, 1060], completo: true },
+      { talonario: 108, numeros: [1075], completo: false },
+    ]);
+    expect(groupByBooklet([], 10)).toEqual([]);
+  });
+
   it('numera los talonarios de forma global', () => {
     expect(bookletNumbers(1, 5)).toEqual([1, 2, 3, 4, 5]);
     expect(bookletNumbers(3, 5)).toEqual([11, 12, 13, 14, 15]);

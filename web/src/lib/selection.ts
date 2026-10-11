@@ -5,6 +5,26 @@ export function bookletNumbers(k: number, perBooklet: number): number[] {
   return Array.from({ length: perBooklet }, (_, i) => (k - 1) * perBooklet + i + 1);
 }
 
+/** Talonario al que pertenece un número: con 10 por talonario, el 1051 es del talonario 106 */
+export const bookletOf = (n: number, perBooklet: number) => Math.floor((n - 1) / perBooklet) + 1;
+
+export interface BookletGroup {
+  talonario: number;
+  numeros: number[];
+  /** Están los M números del talonario */
+  completo: boolean;
+}
+
+/** Agrupa números por talonario, en orden: [1051…1060, 1075] → talonario 106 completo y talonario 108 con el 1075 */
+export function groupByBooklet(numeros: number[], perBooklet: number): BookletGroup[] {
+  const groups = new Map<number, number[]>();
+  for (const n of [...numeros].sort((a, b) => a - b)) {
+    const k = bookletOf(n, perBooklet);
+    groups.set(k, [...(groups.get(k) ?? []), n]);
+  }
+  return [...groups].map(([talonario, nums]) => ({ talonario, numeros: nums, completo: new Set(nums).size === perBooklet }));
+}
+
 /** Si la selección es exactamente un talonario completo devuelve su número, si no null. */
 export function exactBooklet(selection: Iterable<number>, perBooklet: number, booklets: number): number | null {
   const sel = [...selection].sort((a, b) => a - b);

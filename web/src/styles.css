@@ -134,6 +134,10 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .chip.neutral { background: var(--surface-2); color: var(--ink-2); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips .chip { min-width: 36px; justify-content: center; font-variant-numeric: tabular-nums; }
+/* Números de una orden agrupados por talonario: el talonario a la izquierda, sus números al lado */
+.booklet-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.booklet-lines li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.booklet-tag { font-size: 0.875rem; font-weight: 650; min-width: 7.5em; font-variant-numeric: tabular-nums; }
 
 /* ---- Botones ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px; border-radius: var(--r-control); border: 1.5px solid var(--line-strong); background: var(--surface); font-weight: 650; cursor: pointer; text-decoration: none; color: var(--ink); transition: background-color 0.15s, border-color 0.15s, color 0.15s; touch-action: manipulation; }
