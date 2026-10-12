@@ -6,7 +6,10 @@ import { App } from '../src/App';
 import { DrawStage } from '../src/admin/DrawStage';
 import {
   createDrawSound,
+  createDrumKit,
   makeSeamlessLoop,
+  playSampledFinale,
+  playWaterFinale,
   rollRate,
   rollVelocity,
   sampledRollGain,
@@ -14,8 +17,8 @@ import {
   scheduleFinale,
   scheduleSplash,
   scheduleRoll,
-  shortName,
   suspenseDelays,
+  type DrumSamples,
 } from '../src/admin/drawFx';
 import { TabBar } from '../src/admin/TabBar';
 import type { AdminDraw, AdminRaffle } from '../src/lib/admin';
@@ -31,13 +34,6 @@ describe('utilidades del sorteo en vivo', () => {
     const total = d.reduce((a, b) => a + b, 0);
     expect(total).toBeGreaterThan(3000);
     expect(total).toBeLessThan(5500);
-  });
-
-  it('abrevia el nombre del ganador para anunciarlo', () => {
-    expect(shortName('Juan Soto Pérez')).toBe('Juan S.');
-    expect(shortName('Rosa')).toBe('Rosa');
-    expect(shortName('  ')).toBeNull();
-    expect(shortName(null)).toBeNull();
   });
 
   it('el redoble alterna manos, crece en velocidad y volumen, y continúa sin cortes', () => {
@@ -112,6 +108,8 @@ describe('redoble con grabaciones reales', () => {
   });
   const param = () => ({ value: 0, setValueAtTime() {}, setTargetAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} });
   const created: string[] = [];
+  // Grabaciones que efectivamente se reprodujeron (el buffer de cada fuente al arrancar)
+  const played: unknown[] = [];
   class FakeAudioContext {
     static decode: (b: ArrayBuffer) => Promise<Buf> = () => Promise.reject(new Error('sin decodificar'));
     currentTime = 0;
@@ -121,7 +119,21 @@ describe('redoble con grabaciones reales', () => {
     close() { return Promise.resolve(); }
     private node(kind: string) {
       created.push(kind);
-      return { connect() {}, start() {}, stop() {}, type: '', loop: false, buffer: null, gain: param(), frequency: param(), playbackRate: param() };
+      const n = {
+        connect() {},
+        start() {
+          if (kind === 'source') played.push(n.buffer);
+        },
+        stop() {},
+        type: '',
+        loop: false,
+        buffer: null as unknown,
+        gain: param(),
+        frequency: param(),
+        playbackRate: param(),
+        Q: param(),
+      };
+      return n;
     }
     createGain() { return this.node('gain'); }
     createDynamicsCompressor() { return this.node('compressor'); }
@@ -134,6 +146,7 @@ describe('redoble con grabaciones reales', () => {
 
   beforeEach(() => {
     created.length = 0;
+    played.length = 0;
     vi.stubGlobal('AudioContext', FakeAudioContext);
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -171,21 +184,57 @@ describe('redoble con grabaciones reales', () => {
     s.stop();
   });
 
-  it('con las grabaciones, el redoble es un bucle de la grabación y el final suena el platillo', async () => {
+  it('con las grabaciones, el redoble es un bucle de la grabación y el final suena el platillo con aplausos', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(new ArrayBuffer(8))));
     vi.stubGlobal('fetch', fetchMock);
     FakeAudioContext.decode = () => Promise.resolve(buffer([new Float32Array(460)], 100));
     const s = createDrawSound(false);
     s.start();
     await waitFor(() => expect(created).toContain('source'));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Redoble, platillo, aplausos y perdedor
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(created).not.toContain('oscillator');
     s.tick(1);
     s.reveal();
-    // Platillo grabado (segundo source) + bombo sintetizado + fanfarria
-    expect(created.filter((c) => c === 'source').length).toBe(2);
-    expect(created).toContain('oscillator');
+    // Redoble + platillo + aplausos; el único oscilador es el bombo (sin fanfarria, que se pisaría con los aplausos)
+    expect(created.filter((c) => c === 'source').length).toBe(3);
+    expect(created.filter((c) => c === 'oscillator').length).toBe(1);
     s.stop();
+  });
+
+  // Los finales, directo sobre un contexto falso: qué grabación suena y qué se sintetiza si falta
+  const ctx = () => new FakeAudioContext() as unknown as BaseAudioContext;
+  const samples = (over: Partial<DrumSamples> = {}): DrumSamples => {
+    const b = (name: string) => ({ name }) as unknown as AudioBuffer;
+    return { roll: b('redoble'), crash: b('platillo'), applause: b('aplausos'), loser: b('perdedor'), ...over };
+  };
+  const names = () => played.map((p) => (p as { name?: string })?.name ?? 'ruido');
+
+  it('al ganador: platillo y aplausos; sin aplausos, la fanfarria sintetizada', () => {
+    const c = ctx();
+    playSampledFinale(c, {} as AudioNode, createDrumKit(c, {} as AudioNode), samples(), 1);
+    expect(names()).toEqual(['platillo', 'aplausos']);
+    expect(created.filter((k) => k === 'oscillator').length).toBe(1);
+
+    created.length = 0;
+    played.length = 0;
+    playSampledFinale(c, {} as AudioNode, createDrumKit(c, {} as AudioNode), samples({ applause: null }), 1);
+    expect(names()).toEqual(['platillo']);
+    // Bombo + 8 notas de la fanfarria
+    expect(created.filter((k) => k === 'oscillator').length).toBe(9);
+  });
+
+  it('al agua: el sonido de perdedor; sin él, el chapuzón sintetizado', () => {
+    const c = ctx();
+    playWaterFinale(c, {} as AudioNode, createDrumKit(c, {} as AudioNode), samples(), 1);
+    expect(names()).toEqual(['perdedor']);
+
+    played.length = 0;
+    playWaterFinale(c, {} as AudioNode, createDrumKit(c, {} as AudioNode), samples({ loser: null }), 1);
+    expect(names()).toEqual(['ruido']);
+    played.length = 0;
+    playWaterFinale(c, {} as AudioNode, createDrumKit(c, {} as AudioNode), null, 1);
+    expect(names()).toEqual(['ruido']);
   });
 });
 
@@ -205,19 +254,19 @@ describe('escenario del sorteo', () => {
   });
 
   it('un número al agua se anuncia sin celebrar, con su dueño', () => {
-    render(<DrawStage {...base} stage={{ phase: 'reveal', tipo: 'agua', numero: 42, ganador: 'Rosa D.' }} onSkip={() => {}} onClose={() => {}} />);
+    render(<DrawStage {...base} stage={{ phase: 'reveal', tipo: 'agua', numero: 42, ganador: 'Rosa Díaz Soto' }} onSkip={() => {}} onClose={() => {}} />);
     const dialog = screen.getByRole('dialog', { name: /Al agua/ });
     expect(within(dialog).getByText('Número al agua', { exact: false }).parentElement).toHaveTextContent('Número al agua 042');
-    expect(within(dialog).getByText('Era de Rosa D.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Era de Rosa Díaz Soto')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Continuar' })).toHaveFocus();
   });
 
   it('al revelar anuncia el número y el ganador, enfoca "Continuar" y se cierra con Escape', () => {
     const onClose = vi.fn();
-    render(<DrawStage {...base} stage={{ phase: 'reveal', numero: 42, ganador: 'Juan S.' }} onSkip={() => {}} onClose={onClose} />);
+    render(<DrawStage {...base} stage={{ phase: 'reveal', numero: 42, ganador: 'Juan Soto Pérez' }} onSkip={() => {}} onClose={onClose} />);
     const dialog = screen.getByRole('dialog', { name: /Tenemos ganador/ });
     expect(within(dialog).getByText('Número ganador', { exact: false }).parentElement).toHaveTextContent('Número ganador 042');
-    expect(within(dialog).getByText('Juan S.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Juan Soto Pérez')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Continuar' })).toHaveFocus();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
@@ -279,7 +328,7 @@ describe('sorteo en vivo de punta a punta', () => {
     await user.click(within(rolling).getByRole('button', { name: 'Saltar animación' }));
 
     const reveal = await screen.findByRole('dialog', { name: /Tenemos ganador/ }, { timeout: 4000 });
-    expect(within(reveal).getByText('Juan S.')).toBeInTheDocument();
+    expect(within(reveal).getByText('Juan Soto')).toBeInTheDocument();
     expect(within(reveal).getByText('Número ganador', { exact: false }).parentElement).toHaveTextContent('04');
     await user.click(within(reveal).getByRole('button', { name: 'Continuar' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

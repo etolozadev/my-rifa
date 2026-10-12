@@ -27,7 +27,7 @@ no es un teléfono, el botón copia el mensaje.
 ```bash
 npm install
 npm run dev        # http://localhost:5173, reenvía /api a http://localhost:3000 (cambia con API_URL)
-npm test           # 98 tests (selección, carga rápida, verificación y escenario del sorteo, contactos, pestañas y flujos de comprador y panel con la API simulada)
+npm test           # 101 tests (selección, carga rápida, verificación y escenario del sorteo, contactos, pestañas y flujos de comprador y panel con la API simulada)
 npm run typecheck
 npm run build      # genera dist/
 ```
@@ -47,7 +47,7 @@ Levanta antes la API (`../api`, `npm run dev`) y abre `/r/<slug>` con el slug de
 | `/admin/rifas/:id/contactos` | **Contactos** (organizador y editores): personas a quién llamar por una venta cuando el comprador no dejó teléfono (nombre, teléfono, nota). Muestra cuántas órdenes tiene cada una y, si vendió números, su rendición. No se elimina un contacto con órdenes. |
 | `/admin/rifas/:id/carga` | **Carga rápida**: pegar o importar CSV con `números; nombre; teléfono[; pagada][; contacto]`, vista previa con errores por línea, atribución a un vendedor y persona de contacto para todo el lote (o por fila en la 5ª columna, con su nombre o teléfono); tras cargar quedan en el cuadro solo las líneas que fallaron. |
 | `/admin/rifas/:id/enlaces` | **Enlaces de pago previo**: crear por N números (con comprador opcional), copiar, anular y ver si se usaron. |
-| `/admin/rifas/:id/sorteo` | **Sorteo** (organizador sortea; editores lo ven): cerrar la venta, tirar números al agua antes de cada premio (al azar o de una tómbola física; quedan fuera de toda la rifa y se pueden anular), sortear cada premio al azar o registrar un resultado externo, aviso si hay reservas sin pagar, avisar al ganador por WhatsApp y anular con motivo. **Sorteo en vivo**: escenario a pantalla completa con el número como boleto gigante, tómbola que gira mientras responde el servidor y frena unos 4 s hasta el ganador (solo muestra números que participan), redoble de tambor grabado que crece mientras la tómbola frena (golpe final con platillo grabado, bombo y una fanfarria corta; si las grabaciones no cargan, el redoble se sintetiza con Web Audio), confeti y nombre abreviado ("Juan S."). Se puede saltar la animación (botón o Escape), silenciar en cualquier momento (preferencia guardada en el navegador) y cerrar con Continuar; un número al agua se anuncia con "¡Al agua!", el boleto se hunde y suena un chapuzón, sin confeti. Con movimiento reducido no hay escenario ni confeti. |
+| `/admin/rifas/:id/sorteo` | **Sorteo** (organizador sortea; editores lo ven): cerrar la venta, tirar números al agua antes de cada premio (al azar o de una tómbola física; quedan fuera de toda la rifa y se pueden anular), sortear cada premio al azar o registrar un resultado externo, aviso si hay reservas sin pagar, avisar al ganador por WhatsApp y anular con motivo. **Sorteo en vivo**: escenario a pantalla completa con el número como boleto gigante, tómbola que gira mientras responde el servidor y frena unos 4 s hasta el ganador (solo muestra números que participan), redoble de tambor grabado que crece mientras la tómbola frena (golpe final con platillo grabado, bombo y aplausos; si las grabaciones no cargan, se sintetizan con Web Audio), confeti y el nombre completo del ganador tal como está registrado. Se puede saltar la animación (botón o Escape), silenciar en cualquier momento (preferencia guardada en el navegador) y cerrar con Continuar; un número al agua se anuncia con "¡Al agua!" y el nombre completo de su dueño, el boleto se hunde y suena el sonido de perdedor, sin confeti. Con movimiento reducido no hay escenario ni confeti. |
 | `/admin/rifas/:id/configuracion` | Solo organizador: datos de la rifa y bancarios (precio y talonarios bloqueados fuera de borrador), premios, equipo (editores y vendedores por correo) e invitaciones por link. |
 
 La barra de pestañas se desplaza si no caben (dedo, rueda del mouse, teclado o flechas en los bordes) y mantiene centrada la pestaña activa.
@@ -113,7 +113,10 @@ de la rifa, los datos para transferir aparecen después de los números (primero
 
 ## Sonidos del sorteo
 
-En `src/admin/sonidos/`, recortados a mono y MP3 de 96 kbps (≈ 95 KB en total, se descargan al abrir la pestaña Sorteo):
+En `src/admin/sonidos/`, en mono y MP3 de 96 kbps (≈ 330 KB en total, se descargan al abrir la pestaña Sorteo):
 
 - `redoble.mp3`: 4,6 s de *Drum Roll – Concert Band*, United States Air Force Band. Dominio público (obra del gobierno de EE. UU.), vía [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Drum_Roll_-_Concert_Band_-_United_States_Air_Force_Band.mp3). En el navegador se convierte en un bucle sin costura (`makeSeamlessLoop`).
 - `platillo.mp3`: un golpe de *CrashCymbalSample.ogg*, dominio público, vía [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:CrashCymbalSample.ogg), con caída suavizada.
+- `aplausos.mp3` (al revelar al ganador) y `perdedor.mp3` (cuando un número se va al agua): aportados por el
+  organizador, sin el silencio inicial para que suenen justo al revelar. Son opcionales: si no cargan, suenan la
+  fanfarria o el chapuzón sintetizados.

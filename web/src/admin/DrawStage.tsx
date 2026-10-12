@@ -7,7 +7,7 @@ export interface StageState {
   numero: number;
   /** agua: el número que sale queda eliminado (sin celebración) */
   tipo?: 'premio' | 'agua';
-  /** Nombre abreviado del comprador ("Juan S."), solo al revelar */
+  /** Nombre del comprador tal como está registrado, solo al revelar */
   ganador?: string | null;
 }
 

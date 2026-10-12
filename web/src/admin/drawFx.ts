@@ -1,8 +1,11 @@
 /**
  * Efectos del sorteo en vivo: suspenso de la tómbola, redoble de tambor y confeti.
- * El redoble y el platillo son grabaciones reales de dominio público (ver README); si no cargan, se sintetizan.
+ * El redoble y el platillo son grabaciones reales de dominio público (ver README); al final suenan aplausos, o el
+ * sonido de perdedor si el número se fue al agua. Si las grabaciones no cargan, se sintetizan.
  * Todo es opcional y se degrada en silencio: sin Web Audio no suena, sin canvas no hay confeti.
  */
+import applauseUrl from './sonidos/aplausos.mp3?url';
+import loserUrl from './sonidos/perdedor.mp3?url';
 import crashUrl from './sonidos/platillo.mp3?url';
 import rollUrl from './sonidos/redoble.mp3?url';
 
@@ -14,13 +17,6 @@ export function suspenseDelays(steps = 24, from = 55, to = 560): number[] {
   });
 }
 
-/** "Juan Soto Pérez" → "Juan S." (para anunciarlo en pantalla sin mostrar el apellido completo) */
-export function shortName(name: string | null | undefined): string | null {
-  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return null;
-  return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[1][0].toUpperCase()}.`;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Sonido: redoble de tambor (caja) que crece mientras la tómbola frena, y golpe final con platillo
 
@@ -30,8 +26,8 @@ export interface DrawSound {
   /** progress 0→1: el redoble crece en volumen y velocidad a medida que la tómbola frena */
   tick(progress: number): void;
   /**
-   * Corta el redoble con el final: para un ganador, golpe con platillo y fanfarria corta; para un número
-   * al agua, un bombo suave y un chapuzón
+   * Corta el redoble con el final: para un ganador, golpe con platillo y aplausos; para un número al agua,
+   * un bombo suave y el sonido de perdedor
    */
   reveal(kind?: 'premio' | 'agua'): void;
   /** Silencia o reactiva al instante (sin cortar el sorteo) */
@@ -218,12 +214,16 @@ export function scheduleSplash(kit: Pick<DrumKit, 'kick' | 'splash'>, when: numb
 }
 
 // ---------------------------------------------------------------------------------------------
-// Grabaciones reales (dominio público): unos segundos de redoble parejo y un golpe de platillo
+// Grabaciones: redoble y platillo reales (dominio público), y los sonidos que eligió el organizador para el final:
+// aplausos cuando sale el ganador y el de "perdedor" cuando un número se va al agua
 
 export interface DrumSamples {
   /** Redoble listo para repetirse en bucle sin que se note la unión */
   roll: AudioBuffer;
   crash: AudioBuffer;
+  /** Opcionales: si no cargan, suenan la fanfarria o el chapuzón sintetizados */
+  applause: AudioBuffer | null;
+  loser: AudioBuffer | null;
 }
 
 /**
@@ -255,18 +255,28 @@ export const sampledRollGain = (tension: number) => 0.24 + 0.76 * clamp01(tensio
 /** El redoble se aprieta un poco hacia el final (sube 6 % la velocidad y el tono) */
 export const sampledRollRate = (tension: number) => 1 + 0.06 * clamp01(tension);
 const CRASH_GAIN = 0.85;
+const APPLAUSE_GAIN = 1;
+const LOSER_GAIN = 0.9;
 
-let sampleBytes: Promise<{ roll: ArrayBuffer; crash: ArrayBuffer } | null> | null = null;
+interface SampleBytes {
+  roll: ArrayBuffer;
+  crash: ArrayBuffer;
+  applause: ArrayBuffer | null;
+  loser: ArrayBuffer | null;
+}
+let sampleBytes: Promise<SampleBytes | null> | null = null;
 
-/** Descarga las grabaciones una sola vez (≈ 95 KB). Sin Web Audio no hace nada. */
-export function preloadDrawSounds(): Promise<{ roll: ArrayBuffer; crash: ArrayBuffer } | null> {
+/** Descarga las grabaciones una sola vez (≈ 330 KB). Sin Web Audio no hace nada. */
+export function preloadDrawSounds(): Promise<SampleBytes | null> {
   if (typeof window === 'undefined' || !(window.AudioContext ?? (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext)) {
     return Promise.resolve(null);
   }
   if (!sampleBytes) {
     const get = (url: string) => fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))));
-    sampleBytes = Promise.all([get(rollUrl), get(crashUrl)])
-      .then(([roll, crash]) => ({ roll, crash }))
+    // Aplausos y perdedor son opcionales: si fallan, el redoble y el platillo suenan igual
+    const optional = (url: string) => get(url).catch(() => null);
+    sampleBytes = Promise.all([get(rollUrl), get(crashUrl), optional(applauseUrl), optional(loserUrl)])
+      .then(([roll, crash, applause, loser]) => ({ roll, crash, applause, loser }))
       .catch(() => {
         sampleBytes = null; // el próximo sorteo lo vuelve a intentar
         return null;
@@ -279,13 +289,26 @@ export function preloadDrawSounds(): Promise<{ roll: ArrayBuffer; crash: ArrayBu
 export async function loadDrumSamples(ctx: BaseAudioContext): Promise<DrumSamples | null> {
   const bytes = await preloadDrawSounds();
   if (!bytes) return null;
+  // decodeAudioData se queda con el ArrayBuffer: se le pasa una copia para poder reusar la descarga
+  const decode = (b: ArrayBuffer) => ctx.decodeAudioData(b.slice(0));
+  const optional = (b: ArrayBuffer | null) => (b ? decode(b).catch(() => null) : Promise.resolve(null));
   try {
-    // decodeAudioData se queda con el ArrayBuffer: se le pasa una copia para poder reusar la descarga
-    const [roll, crash] = await Promise.all([ctx.decodeAudioData(bytes.roll.slice(0)), ctx.decodeAudioData(bytes.crash.slice(0))]);
-    return { roll: makeSeamlessLoop(ctx, roll), crash };
+    const [roll, crash, applause, loser] = await Promise.all([decode(bytes.roll), decode(bytes.crash), optional(bytes.applause), optional(bytes.loser)]);
+    return { roll: makeSeamlessLoop(ctx, roll), crash, applause, loser };
   } catch {
     return null;
   }
+}
+
+/** Reproduce una grabación una vez, con su volumen */
+export function playSample(ctx: BaseAudioContext, out: AudioNode, buffer: AudioBuffer, when: number, gain: number) {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const g = ctx.createGain();
+  g.gain.value = gain;
+  src.connect(g);
+  g.connect(out);
+  src.start(when);
 }
 
 /** Redoble grabado en bucle, con volumen y velocidad que siguen la tensión */
@@ -316,17 +339,19 @@ export function playSampledRoll(ctx: BaseAudioContext, out: AudioNode, samples: 
   };
 }
 
-/** Golpe final con grabaciones: platillo real, bombo sintetizado debajo y la fanfarria */
+/** Golpe final con grabaciones: platillo real con el bombo debajo, y los aplausos (o la fanfarria si no cargaron) */
 export function playSampledFinale(ctx: BaseAudioContext, out: AudioNode, kit: DrumKit, samples: DrumSamples, when: number) {
-  const src = ctx.createBufferSource();
-  src.buffer = samples.crash;
-  const g = ctx.createGain();
-  g.gain.value = CRASH_GAIN;
-  src.connect(g);
-  g.connect(out);
-  src.start(when);
+  playSample(ctx, out, samples.crash, when, CRASH_GAIN);
   kit.kick(when, 0.7);
-  scheduleFanfare(kit, when);
+  if (samples.applause) playSample(ctx, out, samples.applause, when + 0.05, APPLAUSE_GAIN);
+  else scheduleFanfare(kit, when);
+}
+
+/** Final de un número al agua: bombo suave y el sonido de perdedor (o el chapuzón sintetizado si no cargó) */
+export function playWaterFinale(ctx: BaseAudioContext, out: AudioNode, kit: DrumKit, samples: DrumSamples | null, when: number) {
+  if (!samples?.loser) return scheduleSplash(kit, when);
+  kit.kick(when, 0.4);
+  playSample(ctx, out, samples.loser, when + 0.05, LOSER_GAIN);
 }
 
 /** Si las grabaciones tardan más que esto (conexión lenta), el sorteo usa el redoble sintetizado */
@@ -410,7 +435,7 @@ export function createDrawSound(muted: boolean): DrawSound {
         when = Math.max(next, when);
       }
       roll?.end(when);
-      if (kind === 'agua') scheduleSplash(kit, when);
+      if (kind === 'agua') playWaterFinale(ctx, master, kit, samples, when);
       else if (samples && !synth) playSampledFinale(ctx, master, kit, samples, when);
       else scheduleFinale(kit, when);
     },

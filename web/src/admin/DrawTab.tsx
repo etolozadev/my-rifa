@@ -5,7 +5,7 @@ import { plural, shortDate, ticketNumber } from '../lib/format';
 import { drawRecipient, winnerMessage } from '../lib/messages';
 import { DropIcon, SpeakerHighIcon, SpeakerSlashIcon } from '../components/icons';
 import { CopyLink } from './CopyLink';
-import { createDrawSound, launchConfetti, preloadDrawSounds, shortName, suspenseDelays, type DrawSound } from './drawFx';
+import { createDrawSound, launchConfetti, preloadDrawSounds, suspenseDelays, type DrawSound } from './drawFx';
 import { DrawStage, type StageState } from './DrawStage';
 import { NotifyButton } from './NotifyButton';
 import { ContactLine, Phone } from './Phone';
@@ -250,7 +250,7 @@ function PrizeDraw({ raffle, prize, draw, water, pool, canDraw, soundOn, onToggl
         }
       }
       if (motion) {
-        setStage({ phase: 'reveal', numero: d.numero, tipo, ganador: shortName(d.compradorNombre) });
+        setStage({ phase: 'reveal', numero: d.numero, tipo, ganador: d.compradorNombre });
         sound?.reveal(tipo);
         // Se celebra al ganador; el número al agua solo se hunde
         if (!agua) {
